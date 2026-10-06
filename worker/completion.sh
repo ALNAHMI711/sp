@@ -11,7 +11,8 @@ checks=0
 echo "# Autonomous completion report" >> "$REPORT"
 echo >> "$REPORT"
 echo "- Repository: ${TARGET_REPO:-unknown}" >> "$REPORT"
-echo "- Commit: $(git rev-parse HEAD)" >> "$REPORT"
+echo "- Commit before agent work: $(git rev-parse HEAD)" >> "$REPORT"
+echo "- Write mode: ${WRITE_MODE:-read_only}" >> "$REPORT"
 echo >> "$REPORT"
 
 check() {
@@ -29,10 +30,19 @@ else
   check "Project test surface detected" "FAIL"
 fi
 
-if git status --porcelain | grep -q .; then
-  check "Working tree clean" "FAIL"
+if [ "${WRITE_MODE:-read_only}" = "propose_changes" ]; then
+  if git status --porcelain | grep -q .; then
+    check "Proposed changes detected" "PASS"
+    git diff --stat >> "$REPORT" || true
+  else
+    check "Proposed changes detected" "FAIL"
+  fi
 else
-  check "Working tree clean" "PASS"
+  if git status --porcelain | grep -q .; then
+    check "Read-only working tree" "FAIL"
+  else
+    check "Read-only working tree" "PASS"
+  fi
 fi
 
 if [ -n "${OPENHANDS_STATUS:-}" ]; then
@@ -52,7 +62,7 @@ fi
 
 echo >> "$REPORT"
 if [ "$critical" -eq 0 ]; then
-  echo "COMPLETION_STATUS=READY_FOR_VERIFICATION" | tee -a "$REPORT"
+  echo "COMPLETION_STATUS=READY_FOR_REVIEW" | tee -a "$REPORT"
 else
   echo "COMPLETION_STATUS=BLOCKED" | tee -a "$REPORT"
   exit 30
