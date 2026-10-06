@@ -47,14 +47,14 @@ textarea{min-height:120px;resize:vertical}button{cursor:pointer;font-weight:700}
 </select>
 <label>المهمة</label><textarea id="task" placeholder="مثال: افحص الاختبارات وحدد أسباب فشل CI"></textarea>
 <label>الوضع</label><select id="mode"><option value="read_only">قراءة فقط</option><option value="propose_changes">اقتراح تغييرات</option></select>
-<button onclick="submitJob()">إرسال إلى الطابور</button>
+<button onclick="submitJob()">إرسال للموافقة</button>
 <pre id="result"></pre>
 </div>
 
 <div class="card">
 <h2>متابعة Job</h2>
 <label>Job ID</label><input id="job" placeholder="ضع Job ID هنا">
-<button onclick="checkJob()">تحديث الحالة</button>
+<button onclick="checkJob()">تحديث الحالة</button><button id="approveBtn" onclick="approveJob()" hidden>اعتماد وتشغيل</button>
 <button onclick="cancelJob()">إلغاء المهمة</button>
 <pre id="jobResult"></pre>
 </div>
@@ -107,12 +107,18 @@ async function submitJob(){
    body:JSON.stringify({target_repo:$("repo").value,task:$("task").value,mode:$("mode").value})});
  const d=await r.json();
  $("result").textContent=JSON.stringify(d,null,2);
- if(d.job_id)$("job").value=d.job_id;
+ if(d.job_id){$("job").value=d.job_id; $("approveBtn").hidden=false;}
 }
 async function checkJob(){
  if(!$("job").value)return;
  const r=await api("/api/jobs/"+encodeURIComponent($("job").value));
  $("jobResult").textContent=JSON.stringify(await r.json(),null,2);
+}
+async function approveJob(){
+ if(!$("job").value)return;
+ const r=await api("/api/jobs/"+encodeURIComponent($("job").value)+"/approve",{method:"POST"});
+ $("jobResult").textContent=JSON.stringify(await r.json(),null,2);
+ $("approveBtn").hidden=true;
 }
 async function cancelJob(){
  if(!$("job").value)return;
