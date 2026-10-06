@@ -45,6 +45,12 @@ jobs:
           echo "LIVE trading, withdrawals, secret rotation, production deployment,"
           echo "and destructive operations are outside this worker's authority."
 
+      - name: Enforce task policy
+        env:
+          TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+          TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
+        run: ./worker/policy.sh
+
       - name: Inspect approved target
         env:
           TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
