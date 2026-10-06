@@ -64,7 +64,7 @@ class ControlQueue:
                     target_repo TEXT NOT NULL,
                     task TEXT NOT NULL,
                     mode TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'queued',
+                    status TEXT NOT NULL DEFAULT 'pending_approval',
                     attempts INTEGER NOT NULL DEFAULT 0,
                     max_attempts INTEGER NOT NULL DEFAULT 3,
                     worker_id TEXT,
@@ -95,6 +95,14 @@ class ControlQueue:
                 (job_id, key, target_repo.strip(), task.strip(), mode, max_attempts, stamp, stamp),
             )
         return job_id
+
+    def approve(self, job_id: str) -> bool:
+        with self._db() as db:
+            changed = db.execute(
+                "UPDATE jobs SET status='queued', updated_at=? WHERE job_id=? AND status='pending_approval'",
+                (now(), job_id),
+            )
+            return changed.rowcount == 1
 
     def claim(self, worker_id: str, lease_seconds: int = 900) -> dict | None:
         if not worker_id.strip() or lease_seconds < 1:
@@ -179,7 +187,7 @@ class ControlQueue:
         stamp = now()
         with self._db() as db:
             queued = db.execute(
-                "UPDATE jobs SET status='cancelled', last_error=?, updated_at=? WHERE status='queued'",
+                "UPDATE jobs SET status='cancelled', last_error=?, updated_at=? WHERE status IN ('pending_approval','queued')",
                 (reason[:2000], stamp),
             ).rowcount
             running = db.execute(
