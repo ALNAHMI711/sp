@@ -16,7 +16,7 @@ def configured_client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(auth, "JWT_SECRET", "test-secret")
     monkeypatch.setenv("CONTROL_ADMIN_USERNAME", "admin")
     monkeypatch.setenv("CONTROL_ADMIN_PASSWORD", "strong-test-password")
-    return TestClient(api.app)
+    return TestClient(api.app, raise_server_exceptions=False)
 
 
 def login_headers(client: TestClient) -> dict[str, str]:
