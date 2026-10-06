@@ -16,6 +16,21 @@ import uuid
 from pathlib import Path
 
 from control_queue import ControlQueue
+from postgres_queue import PostgresQueue
+
+
+def build_queue(db: str):
+    backend = os.getenv("CONTROL_QUEUE_BACKEND", "sqlite").strip().lower()
+    if backend == "sqlite":
+        return ControlQueue(db)
+    if backend == "postgres":
+        dsn = os.getenv("CONTROL_POSTGRES_DSN", "").strip()
+        if not dsn:
+            raise RuntimeError("CONTROL_POSTGRES_DSN is required for postgres backend")
+        queue = PostgresQueue(dsn)
+        queue.init()
+        return queue
+    raise RuntimeError(f"unsupported CONTROL_QUEUE_BACKEND: {backend}")
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,14 +40,14 @@ def run(cmd: list[str], *, env: dict[str, str], timeout: int | None = None) -> i
     return subprocess.run(cmd, cwd=ROOT, env=env, timeout=timeout, check=False).returncode
 
 
-def cancellation_requested(queue: ControlQueue, job_id: str, kill_file: Path) -> bool:
+def cancellation_requested(queue, job_id: str, kill_file: Path) -> bool:
     if kill_file.exists():
         return True
     row = queue.get(job_id)
     return row is None or row["status"] == "cancel_requested"
 
 
-def cancel_and_continue(queue: ControlQueue, job_id: str, reason: str) -> bool:
+def cancel_and_continue(queue, job_id: str, reason: str) -> bool:
     row = queue.get(job_id)
     if row and row["status"] == "cancel_requested":
         queue.mark_cancelled(job_id, reason)
@@ -49,7 +64,7 @@ def main() -> int:
     parser.add_argument("--poll-seconds", type=int, default=10)
     args = parser.parse_args()
 
-    queue = ControlQueue(args.db)
+    queue = build_queue(args.db)
     kill_file = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
     queue.recover_expired()
 
