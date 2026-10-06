@@ -19,6 +19,11 @@ on:
           - read_only
           - propose_changes
         default: read_only
+      run_openhands:
+        description: "Run OpenHands only when Agent Server secrets are configured"
+        required: true
+        type: boolean
+        default: false
   schedule:
     - cron: "17 */2 * * *"
 
@@ -35,6 +40,9 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+      TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
     steps:
       - name: Checkout control hub
         uses: actions/checkout@v4
@@ -46,28 +54,33 @@ jobs:
           echo "and destructive operations are outside this worker's authority."
 
       - name: Enforce task policy
-        env:
-          TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
-          TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
         run: bash worker/policy.sh
 
       - name: Inspect approved target
-        env:
-          TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
-          TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
         run: bash worker/inspect.sh
 
       - name: Run safe tests
-        env:
-          TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
-          TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
         run: |
           set -euo pipefail
+          rm -rf "$RUNNER_TEMP/test-target"
           git clone --depth 1 "https://github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
-          ./worker/test.sh "$RUNNER_TEMP/test-target"
+          bash worker/test.sh "$RUNNER_TEMP/test-target"
 
-      - name: Upload inspection report
+      - name: Run completion gate
+        env:
+          OPENHANDS_STATUS: ${{ env.OPENHANDS_STATUS }}
+        run: |
+          set -euo pipefail
+          # The gate evaluates the tested target, not the control-hub checkout.
+          bash worker/completion.sh "$RUNNER_TEMP/test-target"
+
+      - name: Upload autonomous reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: autonomous-inspection-report
-          path: inspection-report.md
+          name: autonomous-worker-reports
+          path: |
+            inspection-report.md
+            completion-report.md
+            test-report.md
+          if-no-files-found: ignore
