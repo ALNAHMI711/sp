@@ -1,0 +1,31 @@
+name: OpenHands PR Review
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    if: |
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.author_association != 'FIRST_TIME_CONTRIBUTOR' &&
+      github.event.pull_request.author_association != 'NONE'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: openhands-pr-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Run OpenHands PR Review
+        uses: OpenHands/extensions/plugins/pr-review@main
+        with:
+          llm-model: ${{ vars.OPENHANDS_REVIEW_MODEL || 'anthropic/claude-sonnet-4-5-20250929' }}
+          llm-api-key: ${{ secrets.OPENHANDS_REVIEW_LLM_API_KEY }}
+          github-token: ${{ secrets.OPENHANDS_REVIEW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          require-evidence: 'true'
+          use-sub-agents: 'false'
+          extensions-version: main
