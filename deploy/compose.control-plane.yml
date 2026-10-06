@@ -37,6 +37,7 @@ services:
       - ./worker.env
     environment:
       CONTROL_QUEUE_DB: /app/data/control-queue.sqlite3
+      CONTROL_KILL_SWITCH_FILE: /app/data/KILL_SWITCH
     volumes:
       - control-data:/app/data
       - worker-workspaces:/app/workspaces
