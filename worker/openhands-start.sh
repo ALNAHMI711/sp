@@ -7,12 +7,11 @@ set -euo pipefail
 : "${OPENHANDS_TASK:?OPENHANDS_TASK is required}"
 
 BASE="${OPENHANDS_AGENT_SERVER_URL%/}"
-AUTH_HEADER="X-Session-API-Key: $OPENHANDS_SESSION_API_KEY"
 
-python - "$BASE" "$OPENHANDS_WORKING_DIR" "$OPENHANDS_TASK" "$AUTH_HEADER" <<'PY'
+python - "$BASE" "$OPENHANDS_WORKING_DIR" "$OPENHANDS_TASK" "$OPENHANDS_SESSION_API_KEY" <<'PY'
 import json, sys, urllib.request, urllib.error
 
-base, working_dir, task, auth = sys.argv[1:]
+base, working_dir, task, api_key = sys.argv[1:]
 payload = {
     "initial_message": {
         "role": "user",
@@ -24,7 +23,7 @@ payload = {
 req = urllib.request.Request(
     base + "/api/conversations",
     data=json.dumps(payload).encode(),
-    headers={"Content-Type": "application/json", "X-Session-API-Key": auth.split(": ", 1)[1]},
+    headers={"Content-Type": "application/json", "X-Session-API-Key": api_key},
     method="POST",
 )
 try:
