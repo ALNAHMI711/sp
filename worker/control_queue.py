@@ -149,6 +149,18 @@ class ControlQueue:
                 recovered += changed.rowcount
         return recovered
 
+    def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900) -> bool:
+        if lease_seconds < 1:
+            raise ValueError("lease_seconds must be positive")
+        lease = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
+        with self._db() as db:
+            changed = db.execute(
+                """UPDATE jobs SET lease_until=?, updated_at=?
+                   WHERE job_id=? AND worker_id=? AND status='running'""",
+                (lease, now(), job_id, worker_id),
+            )
+            return changed.rowcount == 1
+
     def finish(self, job_id: str, success: bool, error: str = "") -> bool:
         status = "succeeded" if success else "failed"
         with self._db() as db:
