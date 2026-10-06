@@ -199,7 +199,7 @@ class PostgresQueue:
         with self._connect() as db:
             queued = db.execute(
                 """UPDATE jobs SET status='cancelled', last_error=%s, updated_at=%s
-                   WHERE status='queued'""", (reason[:2000], stamp)
+                   WHERE status IN ('pending_approval', 'queued')""", (reason[:2000], stamp)
             ).rowcount
             running = db.execute(
                 """UPDATE jobs SET status='cancel_requested', last_error=%s, updated_at=%s
