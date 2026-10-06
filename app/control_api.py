@@ -76,7 +76,7 @@ def create_job(payload: JobRequest, user: dict = Depends(current_user)) -> dict:
             raise HTTPException(status_code=409, detail="duplicate idempotency key") from exc
         raise
     audit(user["sub"], "job_created", job_id, payload.target_repo)
-    return {"job_id": job_id, "status": "queued"}
+    return {"job_id": job_id, "status": "pending_approval"}
 
 
 @app.post("/jobs/{job_id}/approve")
