@@ -31,3 +31,12 @@ def test_idempotency_and_recovery(tmp_path: Path) -> None:
     with queue._db() as db:
         row = db.execute("SELECT status FROM jobs WHERE job_id=?", (job_id,)).fetchone()
     assert row["status"] == "succeeded"
+
+
+def test_policy_is_enforced_at_queue_boundary(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    import pytest
+    with pytest.raises(PermissionError):
+        queue.enqueue("unknown/repo", "run tests", "read_only")
+    with pytest.raises(PermissionError):
+        queue.enqueue("ALNAHMI711/sp", "enable LIVE trading", "propose_changes")
