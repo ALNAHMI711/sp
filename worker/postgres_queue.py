@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row
@@ -76,6 +75,10 @@ class PostgresQueue:
         with self._connect() as db:
             with db.cursor() as cur:
                 cur.execute(SCHEMA)
+
+    def close(self) -> None:
+        """Connection-per-operation adapter; kept for backend interface symmetry."""
+        return None
 
     def enqueue(self, target_repo: str, task: str, mode: str,
                 idempotency_key: str | None = None,
