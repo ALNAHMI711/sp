@@ -14,6 +14,7 @@ def test_idempotency_and_recovery(tmp_path: Path) -> None:
     else:
         raise AssertionError("duplicate idempotency key must be rejected")
 
+    assert queue.approve(job_id)
     claimed = queue.claim("worker-1", lease_seconds=1)
     assert claimed and claimed["job_id"] == job_id
 
@@ -48,6 +49,7 @@ def test_cancel_states(tmp_path: Path) -> None:
     assert queue.cancel(job_id) == "cancelled"
     assert queue.get(job_id)["status"] == "cancelled"
     job2 = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.approve(job2)
     queue.claim("worker-1", lease_seconds=60)
     assert queue.cancel(job2) == "cancel_requested"
     assert queue.get(job2)["status"] == "cancel_requested"
@@ -56,6 +58,8 @@ def test_cancel_states(tmp_path: Path) -> None:
 def test_cancel_requested_is_finalized(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.approve(job_id)
+    assert queue.approve(job_id)
     queue.claim("worker-1", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.mark_cancelled(job_id, "test_cancel") is True
@@ -66,6 +70,7 @@ def test_kill_switch_marks_queued_and_running_jobs(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     running = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
     queued = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.approve(running)
     queue.claim("worker-1", lease_seconds=60)
     result = queue.request_kill_switch()
     assert result == {"queued_cancelled": 1, "running_cancel_requested": 1}
@@ -112,6 +117,8 @@ def test_two_workers_claim_distinct_jobs(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     first = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
     second = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.approve(first)
+    assert queue.approve(second)
 
     def claim(worker: str):
         return queue.claim(worker, lease_seconds=60)
@@ -121,3 +128,12 @@ def test_two_workers_claim_distinct_jobs(tmp_path: Path) -> None:
 
     ids = {row["job_id"] for row in claimed if row is not None}
     assert ids == {first, second}
+
+
+def test_approval_gate_blocks_unapproved_jobs(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.get(job_id)["status"] == "pending_approval"
+    assert queue.claim("worker-1") is None
+    assert queue.approve(job_id) is True
+    assert queue.claim("worker-1")["job_id"] == job_id
