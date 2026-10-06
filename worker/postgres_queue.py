@@ -132,6 +132,18 @@ class PostgresQueue:
             ).fetchone()
             return dict(claimed) if claimed else None
 
+    def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900) -> bool:
+        if lease_seconds < 1:
+            raise ValueError("lease_seconds must be positive")
+        lease = now() + timedelta(seconds=lease_seconds)
+        with self._connect() as db:
+            result = db.execute(
+                """UPDATE jobs SET lease_until=%s, updated_at=%s
+                   WHERE job_id=%s AND worker_id=%s AND status='running'""",
+                (lease, now(), job_id, worker_id),
+            )
+        return result.rowcount == 1
+
     def finish(self, job_id: str, success: bool, error: str = "") -> bool:
         status = "succeeded" if success else "failed"
         with self._connect() as db:
