@@ -5,10 +5,7 @@ operate the kill switch. It never executes repository commands itself.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
-import secrets
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -19,17 +16,7 @@ from app.auth import audit, current_user, login
 
 app = FastAPI(title="Autonomous Control API", version="0.1.0")
 DB = os.getenv("CONTROL_QUEUE_DB", ".data/control-queue.sqlite3")
-API_TOKEN = os.getenv("CONTROL_API_TOKEN", "")
 KILL_SWITCH = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
-
-
-def require_token(request: Request) -> None:
-    if not API_TOKEN:
-        raise HTTPException(status_code=503, detail="control API token is not configured")
-    supplied = request.headers.get("authorization", "")
-    expected = f"Bearer {API_TOKEN}"
-    if not hmac.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="unauthorized")
 
 
 class LoginRequest(BaseModel):
