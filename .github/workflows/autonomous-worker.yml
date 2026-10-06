@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+      TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/sp' }}
       TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
       WRITE_MODE: ${{ inputs.write_mode || 'read_only' }}
       RUN_OPENHANDS: ${{ inputs.run_openhands || false }}
@@ -60,7 +60,7 @@ jobs:
           client-id: ${{ vars.AUTONOMOUS_WORKER_APP_CLIENT_ID }}
           private-key: ${{ secrets.AUTONOMOUS_WORKER_APP_PRIVATE_KEY }}
           owner: ALNAHMI711
-          repositories: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+          repositories: ${{ inputs.target_repo || 'ALNAHMI711/sp' }}
           permission-contents: write
           permission-pull-requests: write
 
