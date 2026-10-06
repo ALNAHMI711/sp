@@ -47,12 +47,13 @@ def main() -> int:
             continue
 
         workspace = Path(tempfile.mkdtemp(prefix=f"autonomous-{job['job_id']}-"))
+        repo_dir = workspace / "repo"
         env = os.environ.copy()
         env.update({
             "TARGET_REPO": job["target_repo"],
             "TASK": job["task"],
             "WRITE_MODE": job["mode"],
-            "OPENHANDS_WORKING_DIR": str(workspace),
+            "OPENHANDS_WORKING_DIR": str(repo_dir),
             "OPENHANDS_TASK": job["task"],
             "INSPECTION_WORKDIR": str(workspace),
         })
@@ -77,13 +78,13 @@ def main() -> int:
                     queue.finish(job["job_id"], False, f"openhands_failed:{rc}")
                     continue
 
-            test_rc = run(["bash", str(ROOT / "worker/test.sh"), str(workspace)], env=env)
+            test_rc = run(["bash", str(ROOT / "worker/test.sh"), str(repo_dir)], env=env)
             if test_rc != 0:
                 queue.finish(job["job_id"], False, "tests_failed")
                 continue
 
             completion_env = env | {"OPENHANDS_STATUS": "finished" if job["mode"] == "propose_changes" else "not_requested"}
-            completion_rc = run(["bash", str(ROOT / "worker/completion.sh"), str(workspace)], env=completion_env)
+            completion_rc = run(["bash", str(ROOT / "worker/completion.sh"), str(repo_dir)], env=completion_env)
             if completion_rc != 0:
                 queue.finish(job["job_id"], False, "completion_gate_failed")
                 continue
