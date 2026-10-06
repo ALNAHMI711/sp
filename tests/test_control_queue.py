@@ -139,3 +139,14 @@ def test_approval_gate_blocks_unapproved_jobs(tmp_path: Path) -> None:
     assert queue.claim("worker-1") is None
     assert queue.approve(job_id) is True
     assert queue.claim("worker-1")["job_id"] == job_id
+
+
+def test_renew_lease_keeps_active_job_owned(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.approve(job_id)
+    assert queue.claim("worker-1", lease_seconds=1) is not None
+    assert queue.renew_lease(job_id, "worker-1", lease_seconds=60) is True
+    current = queue.get(job_id)
+    assert current["worker_id"] == "worker-1"
+    assert current["status"] == "running"
