@@ -5,7 +5,7 @@ on:
     inputs:
       target_repo:
         required: true
-        default: "ALNAHMI711/Ahmed-Alnahmi-711"
+        default: "ALNAHMI711/sp"
       task:
         required: true
         default: "Inspect repository and report blockers"
@@ -67,14 +67,18 @@ jobs:
       - name: Clone tested target
         env:
           TARGET_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/test-target"
-          if [ "$WRITE_MODE" = "propose_changes" ]; then
+          if [ "$TARGET_REPO" = "ALNAHMI711/sp" ]; then
+            git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
+          elif [ "$WRITE_MODE" = "propose_changes" ]; then
             test -n "$TARGET_APP_TOKEN"
             git clone "https://x-access-token:$TARGET_APP_TOKEN@github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
           else
-            git clone --depth 1 "https://github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
+            echo "Private target requires the GitHub App in read-only mode: $TARGET_REPO"
+            exit 4
           fi
           git -C "$RUNNER_TEMP/test-target" remote set-url origin "https://github.com/$TARGET_REPO.git"
 
