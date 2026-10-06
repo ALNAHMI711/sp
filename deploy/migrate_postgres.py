@@ -17,6 +17,8 @@ def main() -> None:
     with psycopg.connect(dsn) as db:
         with db.cursor() as cur:
             cur.execute(SCHEMA)
+            cur.execute("ALTER TABLE jobs ALTER COLUMN status SET DEFAULT 'pending_approval'")
+            cur.execute("UPDATE jobs SET status='pending_approval', updated_at=NOW() WHERE status='queued'")
             cur.execute(
                 "INSERT INTO schema_migrations(version) VALUES (%s) ON CONFLICT DO NOTHING",
                 ("0001_control_queue",),
