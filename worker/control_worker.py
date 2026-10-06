@@ -62,6 +62,9 @@ def main() -> int:
             "WRITE_MODE": job["mode"],
             "OPENHANDS_WORKING_DIR": str(repo_dir),
             "OPENHANDS_TASK": job["task"],
+            "CONTROL_QUEUE_DB": args.db,
+            "CONTROL_JOB_ID": job["job_id"],
+            "CONTROL_KILL_SWITCH_FILE": str(kill_file),
             "INSPECTION_WORKDIR": str(workspace),
         })
 
@@ -89,7 +92,11 @@ def main() -> int:
                     continue
                 rc = run(["bash", str(ROOT / "worker/openhands-run.sh")], env=env, timeout=args.lease_seconds)
                 if rc != 0:
-                    queue.finish(job["job_id"], False, f"openhands_failed:{rc}")
+                    latest = queue.get(job["job_id"])
+                    if (latest and latest["status"] == "cancel_requested") or kill_file.exists():
+                        queue.mark_cancelled(job["job_id"], "cancelled_during_openhands")
+                    else:
+                        queue.finish(job["job_id"], False, f"openhands_failed:{rc}")
                     continue
 
             test_rc = run(["bash", str(ROOT / "worker/test.sh"), str(repo_dir)], env=env)
