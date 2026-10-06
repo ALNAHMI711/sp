@@ -24,7 +24,6 @@ APPROVED_REPOSITORIES = {
     "ALNAHMI711/-",
     "ALNAHMI711/tte",
     "ALNAHMI711/sp",
-    "ALNAHMI711/sp",
 }
 SENSITIVE_TASK = __import__("re").compile(
     r"(LIVE|live trading|withdrawal|withdrawals|secret rotation|rotate secret|"
@@ -164,6 +163,19 @@ class ControlQueue:
             db.execute("UPDATE jobs SET status=?, updated_at=? WHERE job_id=?", (target, now(), job_id))
             return target
 
+
+    def request_kill_switch(self, reason: str = "kill_switch") -> dict:
+        stamp = now()
+        with self._db() as db:
+            queued = db.execute(
+                "UPDATE jobs SET status='cancelled', last_error=?, updated_at=? WHERE status='queued'",
+                (reason[:2000], stamp),
+            ).rowcount
+            running = db.execute(
+                "UPDATE jobs SET status='cancel_requested', last_error=?, updated_at=? WHERE status='running'",
+                (reason[:2000], stamp),
+            ).rowcount
+        return {"queued_cancelled": queued, "running_cancel_requested": running}
 
     def mark_cancelled(self, job_id: str, reason: str = "cancelled") -> bool:
         with self._db() as db:
