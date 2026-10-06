@@ -15,8 +15,18 @@ import json, sys, time, urllib.request, urllib.error
 
 base, conversation_id, api_key, max_wait, interval = sys.argv[1:]
 max_wait, interval = int(max_wait), int(interval)
-terminal = {"finished", "error", "stuck"}
+terminal = {"finished", "error", "stuck", "stopped"}
 started = time.time()
+
+def post(path):
+    req = urllib.request.Request(
+        base + path,
+        data=b"",
+        headers={"X-Session-API-Key": api_key},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return json.load(response) if response.readable() else {}
 
 def get(path):
     req = urllib.request.Request(
@@ -27,7 +37,26 @@ def get(path):
     with urllib.request.urlopen(req, timeout=30) as response:
         return json.load(response)
 
+queue_db = __import__("os").environ.get("CONTROL_QUEUE_DB", "")
+job_id = __import__("os").environ.get("CONTROL_JOB_ID", "")
+kill_file = __import__("os").environ.get("CONTROL_KILL_SWITCH_FILE", "")
 while time.time() - started < max_wait:
+    if job_id and queue_db:
+        import sqlite3
+        with sqlite3.connect(queue_db, timeout=3) as db:
+            row = db.execute("SELECT status FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        requested = row and row[0] == "cancel_requested"
+    else:
+        requested = False
+    if requested or (kill_file and __import__("os").path.exists(kill_file)):
+        try:
+            post(f"/api/conversations/{conversation_id}/interrupt")
+            print("OPENHANDS_STOP_REQUESTED=1", flush=True)
+        except Exception as exc:
+            print(f"OPENHANDS_STOP_FAILED={type(exc).__name__}", file=sys.stderr)
+            raise SystemExit(22)
+        raise SystemExit(23)
+
     data = get(f"/api/conversations/{conversation_id}")
     status = data.get("execution_status", "unknown")
     print(f"OPENHANDS_STATUS={status}", flush=True)
