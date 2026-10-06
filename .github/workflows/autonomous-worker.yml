@@ -33,12 +33,12 @@ concurrency:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
-      TARGET_REPO: ${ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
-      TASK: ${ inputs.task || 'Inspect repository and report blockers' }}
-      WRITE_MODE: ${ inputs.write_mode || 'read_only' }}
-      RUN_OPENHANDS: ${ inputs.run_openhands || false }}
+      TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+      TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
+      WRITE_MODE: ${{ inputs.write_mode || 'read_only' }}
+      RUN_OPENHANDS: ${{ inputs.run_openhands || false }}
     steps:
       - name: Checkout control hub
         uses: actions/checkout@v4
@@ -52,30 +52,50 @@ jobs:
       - name: Enforce task policy
         run: bash worker/policy.sh
 
-      - name: Inspect approved target
-        run: bash worker/inspect.sh
+      - name: Prepare GitHub App token for target repository
+        if: env.WRITE_MODE == 'propose_changes'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.AUTONOMOUS_WORKER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_WORKER_APP_PRIVATE_KEY }}
+          owner: ALNAHMI711
+          repositories: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Clone tested target
+        env:
+          TARGET_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/test-target"
-          git clone --depth 1 "https://github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
+          if [ "$WRITE_MODE" = "propose_changes" ]; then
+            test -n "$TARGET_APP_TOKEN"
+            git clone "https://x-access-token:$TARGET_APP_TOKEN@github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
+          else
+            git clone --depth 1 "https://github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
+          fi
+          git -C "$RUNNER_TEMP/test-target" remote set-url origin "https://github.com/$TARGET_REPO.git"
 
       - name: Run safe tests before agent
         run: bash worker/test.sh "$RUNNER_TEMP/test-target"
 
       - name: Run OpenHands
         env:
-          OPENHANDS_AGENT_SERVER_URL: ${ secrets.OPENHANDS_AGENT_SERVER_URL }}
-          OPENHANDS_SESSION_API_KEY: ${ secrets.OPENHANDS_SESSION_API_KEY }}
-          OPENHANDS_WORKING_DIR: ${ runner.temp }}/test-target
-          OPENHANDS_TASK: ${ env.TASK }}
+          OPENHANDS_AGENT_SERVER_URL: ${{ secrets.OPENHANDS_AGENT_SERVER_URL }}
+          OPENHANDS_SESSION_API_KEY: ${{ secrets.OPENHANDS_SESSION_API_KEY }}
+          OPENHANDS_WORKING_DIR: ${{ runner.temp }}/test-target
+          OPENHANDS_TASK: ${{ env.TASK }}
         run: |
           set -euo pipefail
-          if [ "$RUN_OPENHANDS" != "true" ]; then exit 0; fi
-          if [ "$WRITE_MODE" != "read_only" ]; then
-            echo "propose_changes is blocked until branch/PR credentials are wired."
-            echo "OPENHANDS_STATUS=write_mode_blocked" >> "$GITHUB_ENV"
+          if [ "$RUN_OPENHANDS" != "true" ]; then
+            echo "OPENHANDS_STATUS=not_requested" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [ "$WRITE_MODE" = "propose_changes" ] && [ -z "${{ steps.app-token.outputs.token }}" ]; then
+            echo "GitHub App token was not created; propose_changes is blocked."
+            echo "OPENHANDS_STATUS=write_credentials_missing" >> "$GITHUB_ENV"
             exit 0
           fi
           if [ -z "${OPENHANDS_AGENT_SERVER_URL:-}" ] || [ -z "${OPENHANDS_SESSION_API_KEY:-}" ]; then
@@ -102,7 +122,8 @@ for line in reversed(pathlib.Path(log).read_text(errors="replace").splitlines())
 if rc != 0 and status == "finished":
     status = "error"
 pathlib.Path(status_file).write_text(status + "\n")
-with open(env_file, "a") as f: f.write("OPENHANDS_STATUS=" + status + "\n")
+with open(env_file, "a") as f:
+    f.write("OPENHANDS_STATUS=" + status + "\n")
 print("OpenHands final status: " + status)
 PY
 
@@ -113,8 +134,45 @@ PY
       - name: Run completion gate
         if: always()
         env:
-          OPENHANDS_STATUS: ${ env.OPENHANDS_STATUS }}
+          OPENHANDS_STATUS: ${{ env.OPENHANDS_STATUS }}
         run: bash worker/completion.sh "$RUNNER_TEMP/test-target"
+
+      - name: Publish branch and draft PR
+        if: env.WRITE_MODE == 'propose_changes' && env.OPENHANDS_STATUS == 'finished' && success()
+        working-directory: ${{ runner.temp }}/test-target
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TASK: ${{ env.TASK }}
+          TARGET_REPO: ${{ env.TARGET_REPO }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          test -n "$(git status --porcelain)"
+          git config user.name "autonomous-worker[bot]"
+          git config user.email "autonomous-worker[bot]@users.noreply.github.com"
+          slug="$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-48)"
+          [ -n "$slug" ] || slug="task"
+          branch="agent/$slug/${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "agent: $TASK"
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --repo "$TARGET_REPO" \
+            --base "$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')" \
+            --head "$branch" \
+            --draft \
+            --title "agent: $TASK" \
+            --body "Automated change proposed by Autonomous Worker.
+
+Task: $TASK
+
+OpenHands status: finished
+Tests: passed
+Policy: allowed
+Completion gate: passed
+
+This PR is intentionally opened as draft for human review. No production deployment or sensitive operation is performed by this workflow."
 
       - name: Upload autonomous reports
         if: always()
@@ -125,6 +183,6 @@ PY
             inspection-report.md
             completion-report.md
             test-report.md
-            ${ runner.temp }}/openhands-run.log
-            ${ runner.temp }}/openhands-status.txt
+            ${{ runner.temp }}/openhands-run.log
+            ${{ runner.temp }}/openhands-status.txt
           if-no-files-found: ignore
