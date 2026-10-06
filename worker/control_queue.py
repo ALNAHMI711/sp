@@ -132,12 +132,13 @@ class ControlQueue:
             ).fetchall()
             for row in rows:
                 status = "queued" if row["attempts"] < row["max_attempts"] else "failed"
-                db.execute(
+                changed = db.execute(
                     """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
-                       last_error=?, updated_at=? WHERE job_id=? AND status='running'""",
-                    (status, "worker_lease_expired", stamp, row["job_id"]),
+                       last_error=?, updated_at=? WHERE job_id=? AND status='running'
+                       AND lease_until IS NOT NULL AND lease_until<=?""",
+                    (status, "worker_lease_expired", stamp, row["job_id"], stamp),
                 )
-                recovered += 1
+                recovered += changed.rowcount
         return recovered
 
     def finish(self, job_id: str, success: bool, error: str = "") -> bool:
