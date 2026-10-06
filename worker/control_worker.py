@@ -28,9 +28,8 @@ def build_queue(db: str):
         dsn = os.getenv("CONTROL_POSTGRES_DSN", "").strip()
         if not dsn:
             raise RuntimeError("CONTROL_POSTGRES_DSN is required for postgres backend")
-        queue = PostgresQueue(dsn)
-        queue.init()
-        return queue
+        # PostgreSQL schema ownership belongs to the migration service; workers only consume it.
+        return PostgresQueue(dsn)
     raise RuntimeError(f"unsupported CONTROL_QUEUE_BACKEND: {backend}")
 
 
