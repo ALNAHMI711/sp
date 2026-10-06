@@ -6,7 +6,9 @@ services:
     restart: unless-stopped
     environment:
       CONTROL_QUEUE_DB: /app/data/control-queue.sqlite3
-      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:?set CONTROL_API_TOKEN in environment}
+      CONTROL_JWT_SECRET: ${CONTROL_JWT_SECRET:?set CONTROL_JWT_SECRET in environment}
+      CONTROL_ADMIN_USERNAME: ${CONTROL_ADMIN_USERNAME:?set CONTROL_ADMIN_USERNAME in environment}
+      CONTROL_ADMIN_PASSWORD: ${CONTROL_ADMIN_PASSWORD:?set CONTROL_ADMIN_PASSWORD in environment}
       CONTROL_KILL_SWITCH_FILE: /app/data/KILL_SWITCH
     ports:
       - "127.0.0.1:8080:8080"
