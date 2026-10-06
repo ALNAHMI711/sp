@@ -169,6 +169,7 @@ class ControlQueue:
             changed = db.execute(
                 """UPDATE jobs
                    SET status=CASE status
+                       WHEN 'pending_approval' THEN 'cancelled'
                        WHEN 'queued' THEN 'cancelled'
                        WHEN 'running' THEN 'cancel_requested'
                        ELSE status
