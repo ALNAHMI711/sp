@@ -89,3 +89,19 @@ def test_cancel_is_idempotent_for_active_job(tmp_path: Path) -> None:
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.get(job_id)["status"] == "cancel_requested"
+
+def test_recover_expired_is_compare_and_set(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    queue.claim("worker-1", lease_seconds=60)
+    with queue._db() as db:
+        db.execute(
+            "UPDATE jobs SET lease_until='2000-01-01T00:00:00+00:00' WHERE job_id=?",
+            (job_id,),
+        )
+        db.execute(
+            "UPDATE jobs SET status='cancel_requested' WHERE job_id=?",
+            (job_id,),
+        )
+    assert queue.recover_expired() == 0
+    assert queue.get(job_id)["status"] == "cancel_requested"
