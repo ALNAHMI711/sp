@@ -57,6 +57,15 @@ jobs:
           TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
         run: ./worker/inspect.sh
 
+      - name: Run safe tests
+        env:
+          TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+          TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
+          ./worker/test.sh "$RUNNER_TEMP/test-target"
+
       - name: Upload inspection report
         uses: actions/upload-artifact@v4
         with:
