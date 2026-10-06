@@ -67,7 +67,7 @@ def main() -> int:
 
         try:
             if queue.get(job["job_id"])["status"] == "cancel_requested":
-                queue.finish(job["job_id"], False, "cancelled_before_start")
+                queue.mark_cancelled(job["job_id"], "cancelled_before_start")
                 continue
             policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env)
             if policy_rc != 0:
@@ -80,7 +80,7 @@ def main() -> int:
                 continue
 
             if queue.get(job["job_id"])["status"] == "cancel_requested":
-                queue.finish(job["job_id"], False, "cancelled_before_openhands")
+                queue.mark_cancelled(job["job_id"], "cancelled_before_openhands")
                 continue
 
             if job["mode"] == "propose_changes":
