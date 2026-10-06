@@ -19,3 +19,7 @@ dist/
 build/
 *.log
 .DS_Store
+
+.data/
+deploy/worker.env
+deploy/control-api.env
