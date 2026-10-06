@@ -8,6 +8,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY worker /app/worker
+COPY deploy/worker/requirements.txt /app/worker-requirements.txt
+RUN pip install --no-cache-dir -r /app/worker-requirements.txt
 COPY .gitignore /app/.gitignore
 RUN useradd --create-home --uid 10001 worker \
     && mkdir -p /app/data /app/workspaces \
