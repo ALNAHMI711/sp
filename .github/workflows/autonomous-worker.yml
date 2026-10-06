@@ -59,12 +59,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          INSPECTION_WORKDIR: ${{ runner.temp }}/inspection
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/test-target"
           CLONE_TOKEN="${APP_TOKEN:-$GH_TOKEN}"
           git clone --depth 1 "https://x-access-token:$CLONE_TOKEN@github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
-          TARGET_REPO="$TARGET_REPO" TASK="$TASK" TARGET_CLONE_URL="https://x-access-token:$CLONE_TOKEN@github.com/$TARGET_REPO.git" bash worker/inspect.sh
+          TARGET_REPO="$TARGET_REPO" TASK="$TASK" TARGET_CLONE_URL="https://x-access-token:$CLONE_TOKEN@github.com/$TARGET_REPO.git" INSPECTION_WORKDIR="$INSPECTION_WORKDIR" bash worker/inspect.sh
       - name: Install controlled target dependencies
         working-directory: ${{ runner.temp }}/test-target
         run: |
