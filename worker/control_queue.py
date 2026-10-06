@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Small durable control-plane queue for autonomous jobs.
+
+SQLite is the default single-node persistence layer. The API is deliberately
+small so the storage implementation can later move to PostgreSQL without
+changing lifecycle semantics.
+"""
+from __future__ import annotations
+
+import argparse
+import sqlite3
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class ControlQueue:
+    def __init__(self, database: str | Path) -> None:
+        self.database = Path(database)
+        self.database.parent.mkdir(parents=True, exist_ok=True)
+        self._init()
+
+    def _db(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.database, timeout=10, isolation_level=None)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA busy_timeout=10000")
+        return db
+
+    def _init(self) -> None:
+        with self._db() as db:
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS jobs (
+                    job_id TEXT PRIMARY KEY,
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    target_repo TEXT NOT NULL,
+                    task TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL DEFAULT 3,
+                    worker_id TEXT,
+                    lease_until TEXT,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_ready ON jobs(status, created_at)")
+
+    def enqueue(self, target_repo: str, task: str, mode: str,
+                idempotency_key: str | None = None,
+                max_attempts: int = 3) -> str:
+        if mode not in {"read_only", "propose_changes"}:
+            raise ValueError("invalid mode")
+        if not target_repo.strip() or not task.strip():
+            raise ValueError("target_repo and task are required")
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be positive")
+        key = idempotency_key or str(uuid.uuid4())
+        job_id = str(uuid.uuid4())
+        stamp = now()
+        with self._db() as db:
+            db.execute(
+                """INSERT INTO jobs
+                   (job_id,idempotency_key,target_repo,task,mode,max_attempts,created_at,updated_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (job_id, key, target_repo.strip(), task.strip(), mode, max_attempts, stamp, stamp),
+            )
+        return job_id
+
+    def claim(self, worker_id: str, lease_seconds: int = 900) -> dict | None:
+        if not worker_id.strip() or lease_seconds < 1:
+            raise ValueError("worker_id and positive lease_seconds are required")
+        stamp = now()
+        lease = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM jobs WHERE status='queued' ORDER BY created_at LIMIT 1"
+            ).fetchone()
+            if row is None:
+                db.commit()
+                return None
+            changed = db.execute(
+                """UPDATE jobs SET status='running', attempts=attempts+1,
+                   worker_id=?, lease_until=?, updated_at=?
+                   WHERE job_id=? AND status='queued'""",
+                (worker_id, lease, stamp, row["job_id"]),
+            )
+            if changed.rowcount != 1:
+                db.rollback()
+                return None
+            claimed = db.execute("SELECT * FROM jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+            db.commit()
+        return dict(claimed)
+
+    def recover_expired(self) -> int:
+        stamp = now()
+        recovered = 0
+        with self._db() as db:
+            rows = db.execute(
+                "SELECT job_id,attempts,max_attempts FROM jobs WHERE status='running' AND lease_until IS NOT NULL AND lease_until<=?",
+                (stamp,),
+            ).fetchall()
+            for row in rows:
+                status = "queued" if row["attempts"] < row["max_attempts"] else "failed"
+                db.execute(
+                    """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
+                       last_error=?, updated_at=? WHERE job_id=? AND status='running'""",
+                    (status, "worker_lease_expired", stamp, row["job_id"]),
+                )
+                recovered += 1
+        return recovered
+
+    def finish(self, job_id: str, success: bool, error: str = "") -> None:
+        status = "succeeded" if success else "failed"
+        with self._db() as db:
+            db.execute(
+                """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
+                   last_error=?, updated_at=? WHERE job_id=? AND status='running'""",
+                (status, error[:2000], now(), job_id),
+            )
+
+    def cancel(self, job_id: str) -> None:
+        with self._db() as db:
+            db.execute(
+                """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_until=NULL,
+                   updated_at=? WHERE job_id=? AND status IN ('queued','running')""",
+                (now(), job_id),
+            )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--db", default=".data/control-queue.sqlite3")
+    parser.add_argument("command", choices=("recover",))
+    args = parser.parse_args()
+    queue = ControlQueue(args.db)
+    if args.command == "recover":
+        print(f"RECOVERED={queue.recover_expired()}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
