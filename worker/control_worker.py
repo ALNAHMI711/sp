@@ -35,9 +35,16 @@ def main() -> int:
     args = parser.parse_args()
 
     queue = ControlQueue(args.db)
+    kill_file = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
     queue.recover_expired()
 
     while True:
+        if kill_file.exists():
+            if args.once:
+                return 0
+            time.sleep(args.poll_seconds)
+            queue.recover_expired()
+            continue
         job = queue.claim(args.worker_id, args.lease_seconds)
         if job is None:
             if args.once:
@@ -59,6 +66,9 @@ def main() -> int:
         })
 
         try:
+            if queue.get(job["job_id"])["status"] == "cancel_requested":
+                queue.finish(job["job_id"], False, "cancelled_before_start")
+                continue
             policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env)
             if policy_rc != 0:
                 queue.finish(job["job_id"], False, "policy_blocked")
@@ -67,6 +77,10 @@ def main() -> int:
             inspect_rc = run(["bash", str(ROOT / "worker/inspect.sh")], env=env)
             if inspect_rc != 0:
                 queue.finish(job["job_id"], False, "inspection_failed")
+                continue
+
+            if queue.get(job["job_id"])["status"] == "cancel_requested":
+                queue.finish(job["job_id"], False, "cancelled_before_openhands")
                 continue
 
             if job["mode"] == "propose_changes":
