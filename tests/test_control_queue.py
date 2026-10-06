@@ -59,7 +59,6 @@ def test_cancel_requested_is_finalized(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
     assert queue.approve(job_id)
-    assert queue.approve(job_id)
     queue.claim("worker-1", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.mark_cancelled(job_id, "test_cancel") is True
@@ -80,6 +79,7 @@ def test_kill_switch_marks_queued_and_running_jobs(tmp_path: Path) -> None:
 def test_finish_cannot_override_cancel_request(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.approve(job_id)
     queue.claim("worker-1", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.finish(job_id, True) is False
@@ -90,6 +90,7 @@ def test_finish_cannot_override_cancel_request(tmp_path: Path) -> None:
 def test_cancel_is_idempotent_for_active_job(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.approve(job_id)
     queue.claim("worker-1", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.cancel(job_id) == "cancel_requested"
@@ -98,6 +99,7 @@ def test_cancel_is_idempotent_for_active_job(tmp_path: Path) -> None:
 def test_recover_expired_is_compare_and_set(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.approve(job_id)
     queue.claim("worker-1", lease_seconds=60)
     with queue._db() as db:
         db.execute(
