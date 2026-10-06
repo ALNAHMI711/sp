@@ -10,6 +10,8 @@ services:
       CONTROL_ADMIN_USERNAME: ${CONTROL_ADMIN_USERNAME:?set CONTROL_ADMIN_USERNAME in environment}
       CONTROL_ADMIN_PASSWORD: ${CONTROL_ADMIN_PASSWORD:?set CONTROL_ADMIN_PASSWORD in environment}
       CONTROL_KILL_SWITCH_FILE: /app/data/KILL_SWITCH
+      CONTROL_QUEUE_BACKEND: ${CONTROL_QUEUE_BACKEND:-sqlite}
+      CONTROL_POSTGRES_DSN: ${CONTROL_POSTGRES_DSN:-}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -38,6 +40,8 @@ services:
     environment:
       CONTROL_QUEUE_DB: /app/data/control-queue.sqlite3
       CONTROL_KILL_SWITCH_FILE: /app/data/KILL_SWITCH
+      CONTROL_QUEUE_BACKEND: ${CONTROL_QUEUE_BACKEND:-sqlite}
+      CONTROL_POSTGRES_DSN: ${CONTROL_POSTGRES_DSN:-}
     volumes:
       - control-data:/app/data
       - worker-workspaces:/app/workspaces
