@@ -174,10 +174,6 @@ class DurableJobQueue:
             row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             return self._row(row) if row else None
 
-    @staticmethod
-    def _transition(job_id: str, status: str, error: str) -> dict[str, Any] | None:
-        raise RuntimeError("_transition requires an instance")
-
     def _transition(self, job_id: str, status: str, error: str) -> dict[str, Any] | None:
         now = self._now()
         with self._connect() as conn:
