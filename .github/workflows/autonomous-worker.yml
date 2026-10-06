@@ -4,23 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       target_repo:
-        description: "Approved repository owner/name"
         required: true
         default: "ALNAHMI711/Ahmed-Alnahmi-711"
       task:
-        description: "Inspection task"
         required: true
         default: "Inspect repository and report blockers"
       write_mode:
-        description: "Worker permission mode"
         required: true
         type: choice
-        options:
-          - read_only
-          - propose_changes
+        options: [read_only, propose_changes]
         default: read_only
       run_openhands:
-        description: "Run OpenHands only when Agent Server secrets are configured"
         required: true
         type: boolean
         default: false
@@ -41,8 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
-      TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
+      TARGET_REPO: ${ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+      TASK: ${ inputs.task || 'Inspect repository and report blockers' }}
+      WRITE_MODE: ${ inputs.write_mode || 'read_only' }}
+      RUN_OPENHANDS: ${ inputs.run_openhands || false }}
     steps:
       - name: Checkout control hub
         uses: actions/checkout@v4
@@ -50,8 +46,8 @@ jobs:
       - name: Guard sensitive operations
         run: |
           set -euo pipefail
-          echo "LIVE trading, withdrawals, secret rotation, production deployment,"
-          echo "and destructive operations are outside this worker's authority."
+          echo "Sensitive trading, withdrawal, secret rotation, production deployment,"
+          echo "and destructive operations remain outside worker authority."
 
       - name: Enforce task policy
         run: bash worker/policy.sh
@@ -59,20 +55,66 @@ jobs:
       - name: Inspect approved target
         run: bash worker/inspect.sh
 
-      - name: Run safe tests
+      - name: Clone tested target
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/test-target"
           git clone --depth 1 "https://github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
-          bash worker/test.sh "$RUNNER_TEMP/test-target"
 
-      - name: Run completion gate
+      - name: Run safe tests before agent
+        run: bash worker/test.sh "$RUNNER_TEMP/test-target"
+
+      - name: Run OpenHands
         env:
-          OPENHANDS_STATUS: ${{ env.OPENHANDS_STATUS }}
+          OPENHANDS_AGENT_SERVER_URL: ${ secrets.OPENHANDS_AGENT_SERVER_URL }}
+          OPENHANDS_SESSION_API_KEY: ${ secrets.OPENHANDS_SESSION_API_KEY }}
+          OPENHANDS_WORKING_DIR: ${ runner.temp }}/test-target
+          OPENHANDS_TASK: ${ env.TASK }}
         run: |
           set -euo pipefail
-          # The gate evaluates the tested target, not the control-hub checkout.
-          bash worker/completion.sh "$RUNNER_TEMP/test-target"
+          if [ "$RUN_OPENHANDS" != "true" ]; then exit 0; fi
+          if [ "$WRITE_MODE" != "read_only" ]; then
+            echo "propose_changes is blocked until branch/PR credentials are wired."
+            echo "OPENHANDS_STATUS=write_mode_blocked" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [ -z "${OPENHANDS_AGENT_SERVER_URL:-}" ] || [ -z "${OPENHANDS_SESSION_API_KEY:-}" ]; then
+            echo "OpenHands requested but Agent Server secrets are not configured."
+            echo "OPENHANDS_STATUS=not_configured" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          set +e
+          bash worker/openhands-run.sh | tee "$RUNNER_TEMP/openhands-run.log"
+          rc=$?
+          set -e
+          python - "$RUNNER_TEMP/openhands-run.log" "$rc" "$GITHUB_ENV" "$RUNNER_TEMP/openhands-status.txt" <<'PY'
+import json, pathlib, sys
+log, rc, env_file, status_file = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+status = "error"
+for line in reversed(pathlib.Path(log).read_text(errors="replace").splitlines()):
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if isinstance(data, dict) and "status" in data:
+        status = str(data["status"])
+        break
+if rc != 0 and status == "finished":
+    status = "error"
+pathlib.Path(status_file).write_text(status + "\n")
+with open(env_file, "a") as f: f.write("OPENHANDS_STATUS=" + status + "\n")
+print("OpenHands final status: " + status)
+PY
+
+      - name: Run safe tests after agent
+        if: always()
+        run: bash worker/test.sh "$RUNNER_TEMP/test-target"
+
+      - name: Run completion gate
+        if: always()
+        env:
+          OPENHANDS_STATUS: ${ env.OPENHANDS_STATUS }}
+        run: bash worker/completion.sh "$RUNNER_TEMP/test-target"
 
       - name: Upload autonomous reports
         if: always()
@@ -83,4 +125,6 @@ jobs:
             inspection-report.md
             completion-report.md
             test-report.md
+            ${ runner.temp }}/openhands-run.log
+            ${ runner.temp }}/openhands-status.txt
           if-no-files-found: ignore
