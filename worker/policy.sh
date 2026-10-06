@@ -5,7 +5,7 @@ TARGET_REPO="${TARGET_REPO:?TARGET_REPO is required}"
 TASK="${TASK:-Inspect repository and report blockers}"
 
 case "$TARGET_REPO" in
-  ALNAHMI711/Ahmed-Alnahmi-711|ALNAHMI711/autonomous-business-manager|ALNAHMI711/-|ALNAHMI711/tte) ;;
+  ALNAHMI711/Ahmed-Alnahmi-711|ALNAHMI711/autonomous-business-manager|ALNAHMI711/-|ALNAHMI711/tte|ALNAHMI711/sp) ;;
   *) echo "POLICY_DENY: repository not approved"; exit 10 ;;
 esac
 
