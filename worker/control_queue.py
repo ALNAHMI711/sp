@@ -140,14 +140,15 @@ class ControlQueue:
                 recovered += 1
         return recovered
 
-    def finish(self, job_id: str, success: bool, error: str = "") -> None:
+    def finish(self, job_id: str, success: bool, error: str = "") -> bool:
         status = "succeeded" if success else "failed"
         with self._db() as db:
-            db.execute(
+            changed = db.execute(
                 """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
                    last_error=?, updated_at=? WHERE job_id=? AND status='running'""",
                 (status, error[:2000], now(), job_id),
             )
+            return changed.rowcount == 1
 
     def get(self, job_id: str) -> dict | None:
         with self._db() as db:
