@@ -3,7 +3,7 @@ set -euo pipefail
 
 TARGET_REPO="${TARGET_REPO:?TARGET_REPO is required}"
 TASK="${TASK:-Inspect repository, run safe checks, and report blockers}"
-WORKDIR="${RUNNER_TEMP:-/tmp}/autonomous-target"
+WORKDIR="${INSPECTION_WORKDIR:-${RUNNER_TEMP:-/tmp}/autonomous-target}"
 
 case "$TARGET_REPO" in
   ALNAHMI711/Ahmed-Alnahmi-711|ALNAHMI711/autonomous-business-manager|ALNAHMI711/-|ALNAHMI711/tte) ;;
@@ -17,7 +17,8 @@ echo "== Autonomous Worker =="
 echo "Repository: $TARGET_REPO"
 echo "Task: $TASK"
 
-if ! git clone --depth 1 "https://github.com/$TARGET_REPO.git" "$WORKDIR/repo"; then
+CLONE_URL="${TARGET_CLONE_URL:-https://github.com/$TARGET_REPO.git}"
+if ! git clone --depth 1 "$CLONE_URL" "$WORKDIR/repo"; then
   echo "Blocked: repository clone failed. A scoped GitHub credential may be required for private repositories."
   exit 3
 fi
