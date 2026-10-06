@@ -80,3 +80,60 @@ def test_postgres_backend_requires_dsn(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(api, "QUEUE_BACKEND", "postgres")
     monkeypatch.setattr(api, "POSTGRES_DSN", "")
     assert client.get("/health").status_code == 500
+
+import hashlib
+import hmac
+import json
+
+
+def github_signature(body: bytes, secret: str) -> str:
+    return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+
+def test_github_webhook_requires_valid_signature(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(api, "GITHUB_WEBHOOK_SECRET", "webhook-secret")
+    payload = json.dumps({
+        "ref": "refs/heads/main",
+        "after": "abc123",
+        "repository": {"full_name": "ALNAHMI711/sp"},
+    }).encode()
+
+    denied = client.post(
+        "/webhooks/github",
+        content=payload,
+        headers={"X-GitHub-Event": "push", "X-GitHub-Delivery": "delivery-1"},
+    )
+    assert denied.status_code == 403
+
+    accepted = client.post(
+        "/webhooks/github",
+        content=payload,
+        headers={
+            "X-GitHub-Event": "push",
+            "X-GitHub-Delivery": "delivery-1",
+            "X-Hub-Signature-256": github_signature(payload, "webhook-secret"),
+        },
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["status"] == "pending_approval"
+    job = client.get(f"/jobs/{accepted.json()['job_id']}", headers=login_headers(client))
+    assert job.json()["status"] == "pending_approval"
+
+
+def test_github_webhook_rejects_unapproved_repo_and_deduplicates(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(api, "GITHUB_WEBHOOK_SECRET", "webhook-secret")
+    headers_base = {"X-GitHub-Event": "push", "X-GitHub-Delivery": "delivery-2"}
+
+    foreign = json.dumps({"ref": "refs/heads/main", "repository": {"full_name": "someone/else"}}).encode()
+    foreign_headers = {**headers_base, "X-Hub-Signature-256": github_signature(foreign, "webhook-secret")}
+    assert client.post("/webhooks/github", content=foreign, headers=foreign_headers).status_code == 403
+
+    payload = json.dumps({"ref": "refs/heads/main", "repository": {"full_name": "ALNAHMI711/sp"}}).encode()
+    headers = {**headers_base, "X-Hub-Signature-256": github_signature(payload, "webhook-secret")}
+    first = client.post("/webhooks/github", content=payload, headers=headers)
+    second = client.post("/webhooks/github", content=payload, headers=headers)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["status"] == "duplicate"
