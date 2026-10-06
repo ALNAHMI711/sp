@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from worker.control_queue import ControlQueue
+from app.auth import audit, current_user, login
 
 app = FastAPI(title="Autonomous Control API", version="0.1.0")
 DB = os.getenv("CONTROL_QUEUE_DB", ".data/control-queue.sqlite3")
@@ -31,6 +32,11 @@ def require_token(request: Request) -> None:
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 class JobRequest(BaseModel):
     target_repo: str
     task: str = Field(min_length=1, max_length=8000)
@@ -43,14 +49,19 @@ def queue() -> ControlQueue:
     return ControlQueue(DB)
 
 
+@app.post("/auth/login")
+def auth_login(payload: LoginRequest) -> dict:
+    return {"access_token": login(payload.username, payload.password), "token_type": "bearer"}
+
+
 @app.get("/health")
 def health() -> dict:
     queue()
     return {"status": "ok", "kill_switch": KILL_SWITCH.exists()}
 
 
-@app.post("/jobs", dependencies=[Depends(require_token)])
-def create_job(payload: JobRequest) -> dict:
+@app.post("/jobs")
+def create_job(payload: JobRequest, user: dict = Depends(current_user)) -> dict:
     if KILL_SWITCH.exists():
         raise HTTPException(status_code=423, detail="kill switch enabled")
     try:
@@ -66,11 +77,12 @@ def create_job(payload: JobRequest) -> dict:
         if "UNIQUE constraint failed: jobs.idempotency_key" in str(exc):
             raise HTTPException(status_code=409, detail="duplicate idempotency key") from exc
         raise
+    audit(user["sub"], "job_created", job_id, payload.target_repo)
     return {"job_id": job_id, "status": "queued"}
 
 
-@app.get("/jobs/{job_id}", dependencies=[Depends(require_token)])
-def get_job(job_id: str) -> dict:
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str, user: dict = Depends(current_user)) -> dict:
     with queue()._db() as db:
         row = db.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
     if row is None:
@@ -78,9 +90,10 @@ def get_job(job_id: str) -> dict:
     return dict(row)
 
 
-@app.post("/jobs/{job_id}/cancel", dependencies=[Depends(require_token)])
-def cancel_job(job_id: str) -> dict:
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: str, user: dict = Depends(current_user)) -> dict:
     queue().cancel(job_id)
+    audit(user["sub"], "job_cancel_requested", job_id)
     return {"job_id": job_id, "status": "cancel_requested"}
 
 
