@@ -62,13 +62,12 @@ jobs:
           if [ "$TARGET_REPO" = "ALNAHMI711/sp" ] && [ -f deploy/control-api/requirements.txt ]; then
             python -m pip install -r deploy/control-api/requirements.txt
           fi
-
       - name: Run safe tests
         run: bash worker/test.sh "$RUNNER_TEMP/test-target"
       - name: Completion gate
         if: always()
         env:
-          OPENHANDS_STATUS: not_requested
+          OPENHANDS_STATUS: ""
         run: bash worker/completion.sh "$RUNNER_TEMP/test-target"
       - name: Upload reports
         if: always()
