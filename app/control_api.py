@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from worker.control_queue import ControlQueue
-from app.auth import audit, current_user, login
+from app.auth import audit, current_user, login, require_scope
 
 app = FastAPI(title="Autonomous Control API", version="0.1.0")
 DB = os.getenv("CONTROL_QUEUE_DB", ".data/control-queue.sqlite3")
@@ -49,6 +49,7 @@ def health() -> dict:
 
 @app.post("/jobs")
 def create_job(payload: JobRequest, user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "jobs:write")
     if KILL_SWITCH.exists():
         raise HTTPException(status_code=423, detail="kill switch enabled")
     try:
@@ -70,6 +71,7 @@ def create_job(payload: JobRequest, user: dict = Depends(current_user)) -> dict:
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str, user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "jobs:read")
     row = queue().get(job_id)
     if row is None:
         raise HTTPException(status_code=404, detail="job not found")
@@ -78,6 +80,7 @@ def get_job(job_id: str, user: dict = Depends(current_user)) -> dict:
 
 @app.post("/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "jobs:cancel")
     status = queue().cancel(job_id)
     if status is None:
         raise HTTPException(status_code=404, detail="job not found")
@@ -87,6 +90,7 @@ def cancel_job(job_id: str, user: dict = Depends(current_user)) -> dict:
 
 @app.post("/kill-switch")
 def enable_kill_switch(user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "kill:write")
     KILL_SWITCH.parent.mkdir(parents=True, exist_ok=True)
     KILL_SWITCH.write_text("enabled\n")
     audit(user["sub"], "kill_switch_enabled")
@@ -95,6 +99,7 @@ def enable_kill_switch(user: dict = Depends(current_user)) -> dict:
 
 @app.delete("/kill-switch")
 def disable_kill_switch(user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "kill:write")
     KILL_SWITCH.unlink(missing_ok=True)
     audit(user["sub"], "kill_switch_disabled")
     return {"enabled": False}
