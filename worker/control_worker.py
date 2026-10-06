@@ -25,6 +25,21 @@ def run(cmd: list[str], *, env: dict[str, str], timeout: int | None = None) -> i
     return subprocess.run(cmd, cwd=ROOT, env=env, timeout=timeout, check=False).returncode
 
 
+def cancellation_requested(queue: ControlQueue, job_id: str, kill_file: Path) -> bool:
+    if kill_file.exists():
+        return True
+    row = queue.get(job_id)
+    return row is None or row["status"] == "cancel_requested"
+
+
+def cancel_and_continue(queue: ControlQueue, job_id: str, reason: str) -> bool:
+    row = queue.get(job_id)
+    if row and row["status"] == "cancel_requested":
+        queue.mark_cancelled(job_id, reason)
+        return True
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default=".data/control-queue.sqlite3")
@@ -69,21 +84,35 @@ def main() -> int:
         })
 
         try:
-            if queue.get(job["job_id"])["status"] == "cancel_requested":
-                queue.mark_cancelled(job["job_id"], "cancelled_before_start")
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists() and queue.get(job["job_id"])["status"] == "running":
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_before_start")
                 continue
             policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env)
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists():
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_after_policy")
+                continue
             if policy_rc != 0:
                 queue.finish(job["job_id"], False, "policy_blocked")
                 continue
 
             inspect_rc = run(["bash", str(ROOT / "worker/inspect.sh")], env=env)
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists():
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_after_inspection")
+                continue
             if inspect_rc != 0:
                 queue.finish(job["job_id"], False, "inspection_failed")
                 continue
 
-            if queue.get(job["job_id"])["status"] == "cancel_requested":
-                queue.mark_cancelled(job["job_id"], "cancelled_before_openhands")
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists():
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_before_openhands")
                 continue
 
             if job["mode"] == "propose_changes":
@@ -99,15 +128,38 @@ def main() -> int:
                         queue.finish(job["job_id"], False, f"openhands_failed:{rc}")
                     continue
 
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists():
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_before_tests")
+                continue
+
             test_rc = run(["bash", str(ROOT / "worker/test.sh"), str(repo_dir)], env=env)
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists():
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_after_tests")
+                continue
             if test_rc != 0:
                 queue.finish(job["job_id"], False, "tests_failed")
+                continue
+
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists():
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_before_completion")
                 continue
 
             completion_env = env | {"OPENHANDS_STATUS": "finished" if job["mode"] == "propose_changes" else "not_requested"}
             completion_rc = run(["bash", str(ROOT / "worker/completion.sh"), str(repo_dir)], env=completion_env)
             if completion_rc != 0:
                 queue.finish(job["job_id"], False, "completion_gate_failed")
+                continue
+
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists():
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_before_finish")
                 continue
 
             queue.finish(job["job_id"], True)
