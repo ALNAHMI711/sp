@@ -10,7 +10,8 @@ SCHEMA = "CREATE TABLE IF NOT EXISTS schema_migrations (\n    version TEXT PRIMA
 def main() -> None:
     dsn = os.environ["CONTROL_POSTGRES_DSN"].strip()
     if not dsn:
-        raise SystemExit("CONTROL_POSTGRES_DSN is required")
+        print("PostgreSQL DSN not configured; migration skipped.")
+        return
     with psycopg.connect(dsn) as db:
         with db.cursor() as cur:
             cur.execute(SCHEMA)
