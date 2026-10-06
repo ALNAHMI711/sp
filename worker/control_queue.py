@@ -24,6 +24,7 @@ APPROVED_REPOSITORIES = {
     "ALNAHMI711/-",
     "ALNAHMI711/tte",
     "ALNAHMI711/sp",
+    "ALNAHMI711/sp",
 }
 SENSITIVE_TASK = __import__("re").compile(
     r"(LIVE|live trading|withdrawal|withdrawals|secret rotation|rotate secret|"
