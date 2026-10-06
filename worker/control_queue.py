@@ -23,6 +23,7 @@ APPROVED_REPOSITORIES = {
     "ALNAHMI711/autonomous-business-manager",
     "ALNAHMI711/-",
     "ALNAHMI711/tte",
+    "ALNAHMI711/sp",
 }
 SENSITIVE_TASK = __import__("re").compile(
     r"(LIVE|live trading|withdrawal|withdrawals|secret rotation|rotate secret|"
@@ -162,25 +163,3 @@ class ControlQueue:
             db.execute("UPDATE jobs SET status=?, updated_at=? WHERE job_id=?", (target, now(), job_id))
             return target
 
-    def cancel_legacy(self, job_id: str) -> None:
-        with self._db() as db:
-            db.execute(
-                """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_until=NULL,
-                   updated_at=? WHERE job_id=? AND status IN ('queued','running')""",
-                (now(), job_id),
-            )
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--db", default=".data/control-queue.sqlite3")
-    parser.add_argument("command", choices=("recover",))
-    args = parser.parse_args()
-    queue = ControlQueue(args.db)
-    if args.command == "recover":
-        print(f"RECOVERED={queue.recover_expired()}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
