@@ -44,7 +44,11 @@ def test_authentication_and_job_lifecycle(tmp_path: Path, monkeypatch) -> None:
 
     fetched = client.get(f"/jobs/{job_id}", headers=headers)
     assert fetched.status_code == 200
-    assert fetched.json()["status"] == "queued"
+    assert fetched.json()["status"] == "pending_approval"
+
+    approved = client.post(f"/jobs/{job_id}/approve", headers=headers)
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "queued"
 
     cancelled = client.post(f"/jobs/{job_id}/cancel", headers=headers)
     assert cancelled.status_code == 200
