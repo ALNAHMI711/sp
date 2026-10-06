@@ -15,29 +15,33 @@ echo "- Commit: $(git rev-parse HEAD)" >> "$REPORT"
 echo >> "$REPORT"
 
 check() {
-  local name="$1"
-  local result="$2"
+  local name="$1" result="$2"
   checks=$((checks+1))
   echo "- $name: $result" >> "$REPORT"
-  if [ "$result" != "PASS" ]; then critical=$((critical+1)); fi
+  [ "$result" = "PASS" ] || critical=$((critical+1))
 }
 
-if [ -d .github/workflows ]; then
-  check "Workflow configuration present" "PASS"
-else
-  check "Workflow configuration present" "WARN"
-fi
+[ -d .github/workflows ] && check "Workflow configuration present" "PASS" || check "Workflow configuration present" "FAIL"
 
 if [ -d tests ] || [ -f pytest.ini ] || [ -f pyproject.toml ] || [ -f package.json ]; then
   check "Project test surface detected" "PASS"
 else
-  check "Project test surface detected" "WARN"
+  check "Project test surface detected" "FAIL"
 fi
 
 if git status --porcelain | grep -q .; then
   check "Working tree clean" "FAIL"
 else
   check "Working tree clean" "PASS"
+fi
+
+if [ -n "${OPENHANDS_STATUS:-}" ]; then
+  case "$OPENHANDS_STATUS" in
+    finished) check "OpenHands execution" "PASS" ;;
+    *) check "OpenHands execution" "FAIL" ;;
+  esac
+else
+  echo "- OpenHands execution: NOT_RUN (CI-only verification)" >> "$REPORT"
 fi
 
 if grep -RniE "(TODO|FIXME|XXX)" --exclude-dir=.git . >/dev/null 2>&1; then
