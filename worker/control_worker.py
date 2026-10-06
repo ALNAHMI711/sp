@@ -203,7 +203,12 @@ def main() -> int:
                 continue
             queue.finish(job["job_id"], True)
         except subprocess.TimeoutExpired:
-            queue.finish(job["job_id"], False, "worker_timeout")
+            if cancellation_requested(queue, job["job_id"], kill_file):
+                if kill_file.exists():
+                    queue.cancel(job["job_id"])
+                cancel_and_continue(queue, job["job_id"], "cancelled_after_timeout")
+            else:
+                queue.finish(job["job_id"], False, "worker_timeout")
         except Exception as exc:
             queue.finish(job["job_id"], False, f"worker_exception:{type(exc).__name__}")
         finally:
