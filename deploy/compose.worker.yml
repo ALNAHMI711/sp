@@ -1,0 +1,28 @@
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/worker.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./worker.env
+    volumes:
+      - worker-data:/app/data
+      - worker-workspaces:/app/workspaces
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "/app/worker/worker_health.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  worker-data:
+  worker-workspaces:
