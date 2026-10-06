@@ -33,6 +33,7 @@ def queue():
     raise RuntimeError("unsupported CONTROL_QUEUE_BACKEND")
 KILL_SWITCH = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
+CONTROL_ALLOWED_REPOS = {item.strip() for item in os.getenv("CONTROL_ALLOWED_REPOS", "ALNAHMI711/sp").split(",") if item.strip()}
 
 
 class LoginRequest(BaseModel):
@@ -85,6 +86,8 @@ async def github_webhook(request: Request) -> dict:
     target_repo = str(repository.get("full_name") or "").strip()
     if not target_repo:
         raise HTTPException(status_code=400, detail="repository.full_name is required")
+    if target_repo not in CONTROL_ALLOWED_REPOS:
+        raise HTTPException(status_code=403, detail="repository is not approved")
     ref = str(payload.get("ref") or "").strip()
     after = str(payload.get("after") or "").strip()
     task = f"Inspect GitHub push for {target_repo}"
