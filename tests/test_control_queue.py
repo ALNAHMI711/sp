@@ -81,3 +81,11 @@ def test_finish_cannot_override_cancel_request(tmp_path: Path) -> None:
     assert queue.get(job_id)["status"] == "cancel_requested"
     assert queue.mark_cancelled(job_id, "cancelled_before_finish") is True
     assert queue.get(job_id)["status"] == "cancelled"
+
+def test_cancel_is_idempotent_for_active_job(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    queue.claim("worker-1", lease_seconds=60)
+    assert queue.cancel(job_id) == "cancel_requested"
+    assert queue.cancel(job_id) == "cancel_requested"
+    assert queue.get(job_id)["status"] == "cancel_requested"
