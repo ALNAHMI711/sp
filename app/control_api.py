@@ -26,9 +26,7 @@ def queue():
     if QUEUE_BACKEND == "postgres":
         if not POSTGRES_DSN:
             raise RuntimeError("CONTROL_POSTGRES_DSN is required for postgres backend")
-        backend = PostgresQueue(POSTGRES_DSN)
-        backend.init()
-        return backend
+        return PostgresQueue(POSTGRES_DSN)
     raise RuntimeError("unsupported CONTROL_QUEUE_BACKEND")
 KILL_SWITCH = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
 
