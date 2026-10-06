@@ -6,7 +6,9 @@ The control queue is the persistence boundary between the phone/control UI and t
 
 `queued -> running -> succeeded`
 
-Failure or expired worker leases return a job to `queued` until `max_attempts` is exhausted, then the job becomes `failed`. A queued or running job may be cancelled.
+Cancellation has two phases for active work: `running -> cancel_requested -> cancelled`. Queued work can move directly to `cancelled`. Failure or expired worker leases return a job to `queued` until `max_attempts` is exhausted, then the job becomes `failed`.
+
+Finalization is compare-and-set style: a worker can only finish a job that is still `running`, so a concurrent cancellation cannot be overwritten by a later success.
 
 ## Guarantees
 
