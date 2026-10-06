@@ -23,6 +23,9 @@ def bootstrap_admin():
         if db.execute("SELECT 1 FROM admin_users WHERE username=?",(u,)).fetchone() is None:
             db.execute("INSERT INTO admin_users VALUES(?,?,?,0)",(u,password_hash.hash(p),"SUPER_ADMIN"))
 
+ROLE_SCOPES={"SUPER_ADMIN":{"jobs:read","jobs:write","jobs:cancel","kill:write","audit:read"},"ADMIN":{"jobs:read","jobs:write","jobs:cancel","audit:read"},"OPERATOR":{"jobs:read","jobs:write","jobs:cancel"},"VIEWER":{"jobs:read"},"AUTOMATION_AGENT":{"jobs:read","jobs:write"}}
+
+
 def login(username,password):
     if not JWT_SECRET: raise RuntimeError("CONTROL_JWT_SECRET is not configured")
     bootstrap_admin()
@@ -30,7 +33,14 @@ def login(username,password):
     if not user or user["disabled"] or not password_hash.verify(password,user["password_hash"]):
         raise HTTPException(status_code=401,detail="invalid credentials")
     exp=datetime.now(timezone.utc)+timedelta(minutes=30)
-    return jwt.encode({"sub":username,"role":user["role"],"exp":exp},JWT_SECRET,algorithm="HS256")
+    role=user["role"]
+    return jwt.encode({"sub":username,"role":role,"scopes":sorted(ROLE_SCOPES.get(role,set())),"exp":exp},JWT_SECRET,algorithm="HS256")
+
+def require_scope(user:dict, scope:str):
+    if scope not in set(user.get("scopes", [])):
+        raise HTTPException(status_code=403, detail="insufficient permissions")
+    return user
+
 
 def current_user(request:Request):
     if not JWT_SECRET: raise HTTPException(status_code=503,detail="authentication is not configured")
