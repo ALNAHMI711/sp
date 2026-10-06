@@ -5,6 +5,9 @@ operate the kill switch. It never executes repository commands itself.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import os
 from pathlib import Path
 
@@ -29,11 +32,21 @@ def queue():
         return PostgresQueue(POSTGRES_DSN)
     raise RuntimeError("unsupported CONTROL_QUEUE_BACKEND")
 KILL_SWITCH = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
+GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
 
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+def _verify_github_signature(body: bytes, signature: str | None) -> bool:
+    if not GITHUB_WEBHOOK_SECRET or not signature or not signature.startswith("sha256="):
+        return False
+    expected = "sha256=" + hmac.new(
+        GITHUB_WEBHOOK_SECRET.encode("utf-8"), body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
 
 
 class JobRequest(BaseModel):
@@ -44,6 +57,55 @@ class JobRequest(BaseModel):
     max_attempts: int = Field(default=3, ge=1, le=10)
 
 
+
+
+@app.post("/webhooks/github")
+async def github_webhook(request: Request) -> dict:
+    body = await request.body()
+    signature = request.headers.get("x-hub-signature-256")
+    delivery_id = request.headers.get("x-github-delivery", "").strip()
+    event = request.headers.get("x-github-event", "").strip().lower()
+    if not GITHUB_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="GitHub webhook secret is not configured")
+    if not _verify_github_signature(body, signature):
+        raise HTTPException(status_code=403, detail="invalid webhook signature")
+    if not delivery_id:
+        raise HTTPException(status_code=400, detail="missing GitHub delivery id")
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="invalid JSON payload") from exc
+
+    if event == "ping":
+        return {"accepted": True, "event": "ping"}
+    if event != "push":
+        return {"accepted": True, "event": event, "status": "ignored"}
+
+    repository = payload.get("repository") or {}
+    target_repo = str(repository.get("full_name") or "").strip()
+    if not target_repo:
+        raise HTTPException(status_code=400, detail="repository.full_name is required")
+    ref = str(payload.get("ref") or "").strip()
+    after = str(payload.get("after") or "").strip()
+    task = f"Inspect GitHub push for {target_repo}"
+    if ref:
+        task += f" on {ref}"
+    if after:
+        task += f" at {after[:40]}"
+    try:
+        job_id = queue().enqueue(
+            target_repo, task, "read_only", idempotency_key=f"github:{delivery_id}"
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        if "UNIQUE constraint failed: jobs.idempotency_key" in str(exc) or "duplicate key" in str(exc).lower():
+            return {"accepted": True, "event": event, "status": "duplicate", "delivery_id": delivery_id}
+        raise
+    audit("github-webhook", "webhook_job_created", job_id, f"{event}:{delivery_id}")
+    return {"accepted": True, "event": event, "status": "pending_approval", "job_id": job_id, "delivery_id": delivery_id}
 
 
 @app.post("/auth/login")
