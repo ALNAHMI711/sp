@@ -150,6 +150,7 @@ PY
           test -n "$(git status --porcelain)"
           git config user.name "autonomous-worker[bot]"
           git config user.email "autonomous-worker[bot]@users.noreply.github.com"
+          gh auth setup-git
           slug="$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-48)"
           [ -n "$slug" ] || slug="task"
           branch="agent/$slug/${GITHUB_RUN_ID}"
