@@ -55,6 +55,14 @@ jobs:
           rm -rf "$RUNNER_TEMP/test-target"
           git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
           TARGET_REPO="$TARGET_REPO" TASK="$TASK" TARGET_CLONE_URL="https://x-access-token:$GH_TOKEN@github.com/$TARGET_REPO.git" bash worker/inspect.sh
+      - name: Install controlled target dependencies
+        working-directory: ${{ runner.temp }}/test-target
+        run: |
+          set -euo pipefail
+          if [ "$TARGET_REPO" = "ALNAHMI711/sp" ] && [ -f deploy/control-api/requirements.txt ]; then
+            python -m pip install -r deploy/control-api/requirements.txt
+          fi
+
       - name: Run safe tests
         run: bash worker/test.sh "$RUNNER_TEMP/test-target"
       - name: Completion gate
