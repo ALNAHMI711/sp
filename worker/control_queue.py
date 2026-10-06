@@ -148,7 +148,21 @@ class ControlQueue:
                 (status, error[:2000], now(), job_id),
             )
 
-    def cancel(self, job_id: str) -> None:
+    def get(self, job_id: str) -> dict | None:
+        with self._db() as db:
+            row = db.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        return dict(row) if row else None
+
+    def cancel(self, job_id: str) -> str | None:
+        with self._db() as db:
+            row = db.execute("SELECT status FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+            if row is None:
+                return None
+            target = "cancelled" if row["status"] == "queued" else ("cancel_requested" if row["status"] == "running" else row["status"])
+            db.execute("UPDATE jobs SET status=?, updated_at=? WHERE job_id=?", (target, now(), job_id))
+            return target
+
+    def cancel_legacy(self, job_id: str) -> None:
         with self._db() as db:
             db.execute(
                 """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_until=NULL,
