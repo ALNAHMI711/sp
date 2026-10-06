@@ -1,5 +1,8 @@
 name: Autonomous Worker V2
 on:
+  push:
+    paths:
+      - ".github/workflows/autonomous-worker-v2.yml"
   workflow_dispatch:
     inputs:
       target_repo:
