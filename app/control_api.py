@@ -93,8 +93,9 @@ def enable_kill_switch(user: dict = Depends(current_user)) -> dict:
     require_scope(user, "kill:write")
     KILL_SWITCH.parent.mkdir(parents=True, exist_ok=True)
     KILL_SWITCH.write_text("enabled\n")
-    audit(user["sub"], "kill_switch_enabled")
-    return {"enabled": True}
+    result = queue().request_kill_switch()
+    audit(user["sub"], "kill_switch_enabled", detail=str(result))
+    return {"enabled": True, **result}
 
 
 @app.delete("/kill-switch")
