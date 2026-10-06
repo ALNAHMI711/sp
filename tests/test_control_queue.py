@@ -141,6 +141,22 @@ def test_approval_gate_blocks_unapproved_jobs(tmp_path: Path) -> None:
     assert queue.claim("worker-1")["job_id"] == job_id
 
 
+
+def test_expired_worker_cannot_finish_after_recovery(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "lease-handoff")
+    assert queue.approve(job_id)
+    assert queue.claim("worker-1", lease_seconds=1)
+    with queue._db() as db:
+        db.execute(
+            "UPDATE jobs SET lease_until=? WHERE job_id=?",
+            ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), job_id),
+        )
+    assert queue.recover_expired() == 1
+    assert queue.claim("worker-2", lease_seconds=60)
+    assert queue.finish(job_id, True) is True
+    assert queue.finish(job_id, False, "stale-worker") is False
+
 def test_renew_lease_keeps_active_job_owned(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
