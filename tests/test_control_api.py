@@ -124,6 +124,7 @@ def test_github_webhook_requires_valid_signature(tmp_path: Path, monkeypatch) ->
 def test_github_webhook_rejects_unapproved_repo_and_deduplicates(tmp_path: Path, monkeypatch) -> None:
     client = configured_client(tmp_path, monkeypatch)
     monkeypatch.setattr(api, "GITHUB_WEBHOOK_SECRET", "webhook-secret")
+    monkeypatch.setattr(api, "CONTROL_ALLOWED_REPOS", {"ALNAHMI711/sp"})
     headers_base = {"X-GitHub-Event": "push", "X-GitHub-Delivery": "delivery-2"}
 
     foreign = json.dumps({"ref": "refs/heads/main", "repository": {"full_name": "someone/else"}}).encode()
