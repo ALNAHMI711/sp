@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     target_repo TEXT NOT NULL,
     task TEXT NOT NULL,
     mode TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'queued',
+    status TEXT NOT NULL DEFAULT 'pending_approval',
     attempts INTEGER NOT NULL DEFAULT 0,
     max_attempts INTEGER NOT NULL DEFAULT 3,
     worker_id TEXT,
@@ -101,6 +101,14 @@ class PostgresQueue:
             )
         return job_id
 
+    def approve(self, job_id: str) -> bool:
+        with self._connect() as db:
+            result = db.execute(
+                "UPDATE jobs SET status='queued', updated_at=%s WHERE job_id=%s AND status='pending_approval'",
+                (now(), job_id),
+            )
+        return result.rowcount == 1
+
     def claim(self, worker_id: str, lease_seconds: int = 900) -> dict | None:
         if not worker_id.strip() or lease_seconds < 1:
             raise ValueError("worker_id and positive lease_seconds are required")
@@ -140,6 +148,7 @@ class PostgresQueue:
             row = db.execute(
                 """UPDATE jobs SET
                    status=CASE status
+                     WHEN 'pending_approval' THEN 'cancelled'
                      WHEN 'queued' THEN 'cancelled'
                      WHEN 'running' THEN 'cancel_requested'
                      ELSE status END,
