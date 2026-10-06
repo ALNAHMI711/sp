@@ -6,7 +6,7 @@ TASK="${TASK:-Inspect repository, run safe checks, and report blockers}"
 WORKDIR="${INSPECTION_WORKDIR:-${RUNNER_TEMP:-/tmp}/autonomous-target}"
 
 case "$TARGET_REPO" in
-  ALNAHMI711/Ahmed-Alnahmi-711|ALNAHMI711/autonomous-business-manager|ALNAHMI711/-|ALNAHMI711/tte) ;;
+  ALNAHMI711/Ahmed-Alnahmi-711|ALNAHMI711/autonomous-business-manager|ALNAHMI711/-|ALNAHMI711/tte|ALNAHMI711/sp) ;;
   *) echo "Blocked: target repository is not in the approved initial set."; exit 2 ;;
 esac
 
