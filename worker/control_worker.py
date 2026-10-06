@@ -165,12 +165,6 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_before_completion")
                 continue
 
-            if cancellation_requested(queue, job["job_id"], kill_file):
-                if kill_file.exists():
-                    queue.cancel(job["job_id"])
-                cancel_and_continue(queue, job["job_id"], "cancelled_before_completion")
-                continue
-
             completion_env = env | {"OPENHANDS_STATUS": "finished" if job["mode"] == "propose_changes" else "not_requested"}
             completion_rc = run(["bash", str(ROOT / "worker/completion.sh"), str(repo_dir)], env=completion_env)
             if completion_rc != 0:
