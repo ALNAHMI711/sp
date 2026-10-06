@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Autonomous Control Hub</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif}body{margin:0;background:#08111f;color:#e7eef8}
+main{max-width:900px;margin:auto;padding:24px}.card{background:#101d2f;border:1px solid #24354c;border-radius:16px;padding:18px;margin:12px 0}
+h1{margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+label{display:block;margin:10px 0 6px}input,textarea,select,button{width:100%;box-sizing:border-box;border-radius:10px;border:1px solid #30445f;background:#0b1626;color:inherit;padding:11px}
+textarea{min-height:120px;resize:vertical}button{cursor:pointer;font-weight:700}pre{white-space:pre-wrap;word-break:break-word}
+.status{font-weight:700}
+</style>
+</head>
+<body>
+<main>
+<h1>لوحة التحكم السحابية</h1>
+<div class="card">
+<div class="grid">
+<div>الحالة<br><span id="health" class="status">...</span></div>
+<div>Kill Switch<br><span id="kill" class="status">...</span></div>
+</div>
+</div>
+<div class="card">
+<h2>إضافة مهمة</h2>
+<label>رمز الدخول</label><input id="token" type="password" autocomplete="off">
+<label>المستودع</label>
+<select id="repo">
+<option>ALNAHMI711/Ahmed-Alnahmi-711</option>
+<option>ALNAHMI711/autonomous-business-manager</option>
+<option>ALNAHMI711/-</option>
+<option>ALNAHMI711/tte</option>
+</select>
+<label>المهمة</label><textarea id="task" placeholder="مثال: افحص الاختبارات وحدد أسباب فشل CI"></textarea>
+<label>الوضع</label><select id="mode"><option value="read_only">قراءة فقط</option><option value="propose_changes">اقتراح تغييرات</option></select>
+<button onclick="submitJob()">إرسال إلى الطابور</button>
+<pre id="result"></pre>
+</div>
+<div class="card">
+<h2>متابعة Job</h2>
+<label>Job ID</label><input id="job" placeholder="ضع Job ID هنا">
+<button onclick="checkJob()">تحديث الحالة</button>
+<pre id="jobResult"></pre>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const auth=()=>({Authorization:"Bearer "+$("token").value});
+async function refreshHealth(){
+ try{const r=await fetch("/api/health");const d=await r.json();$("health").textContent=d.status;$("kill").textContent=d.kill_switch?"مفعّل":"متوقف"}
+ catch(e){$("health").textContent="غير متاح"}
+}
+async function submitJob(){
+ const r=await fetch("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json",...auth()},body:JSON.stringify({target_repo:$("repo").value,task:$("task").value,mode:$("mode").value})});
+ const d=await r.json();$("result").textContent=JSON.stringify(d,null,2);if(d.job_id)$("job").value=d.job_id;
+}
+async function checkJob(){
+ const r=await fetch("/api/jobs/"+encodeURIComponent($("job").value),{headers:auth()});
+ $("jobResult").textContent=JSON.stringify(await r.json(),null,2);
+}
+refreshHealth();setInterval(refreshHealth,15000);
+</script>
+</body></html>
