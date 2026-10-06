@@ -18,6 +18,29 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+APPROVED_REPOSITORIES = {
+    "ALNAHMI711/Ahmed-Alnahmi-711",
+    "ALNAHMI711/autonomous-business-manager",
+    "ALNAHMI711/-",
+    "ALNAHMI711/tte",
+}
+SENSITIVE_TASK = __import__("re").compile(
+    r"(LIVE|live trading|withdrawal|withdrawals|secret rotation|rotate secret|"
+    r"production deploy|production deployment|delete repository|drop database|"
+    r"force push|liquidat(e|ion))",
+    __import__("re").IGNORECASE,
+)
+
+
+def validate_task(target_repo: str, task: str, mode: str) -> None:
+    if target_repo not in APPROVED_REPOSITORIES:
+        raise PermissionError("repository is not in the approved initial set")
+    if SENSITIVE_TASK.search(task):
+        raise PermissionError("sensitive task requires explicit approval")
+    if mode not in {"read_only", "propose_changes"}:
+        raise ValueError("invalid mode")
+
+
 class ControlQueue:
     def __init__(self, database: str | Path) -> None:
         self.database = Path(database)
@@ -55,12 +78,11 @@ class ControlQueue:
     def enqueue(self, target_repo: str, task: str, mode: str,
                 idempotency_key: str | None = None,
                 max_attempts: int = 3) -> str:
-        if mode not in {"read_only", "propose_changes"}:
-            raise ValueError("invalid mode")
         if not target_repo.strip() or not task.strip():
             raise ValueError("target_repo and task are required")
         if max_attempts < 1:
             raise ValueError("max_attempts must be positive")
+        validate_task(target_repo.strip(), task.strip(), mode)
         key = idempotency_key or str(uuid.uuid4())
         job_id = str(uuid.uuid4())
         stamp = now()
