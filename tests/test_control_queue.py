@@ -105,3 +105,19 @@ def test_recover_expired_is_compare_and_set(tmp_path: Path) -> None:
         )
     assert queue.recover_expired() == 0
     assert queue.get(job_id)["status"] == "cancel_requested"
+
+def test_two_workers_claim_distinct_jobs(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    first = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    second = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+
+    def claim(worker: str):
+        return queue.claim(worker, lease_seconds=60)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claimed = list(pool.map(claim, ["worker-a", "worker-b"]))
+
+    ids = {row["job_id"] for row in claimed if row is not None}
+    assert ids == {first, second}
