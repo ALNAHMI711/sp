@@ -44,14 +44,27 @@ jobs:
         uses: actions/checkout@v4
       - name: Enforce task policy
         run: bash worker/policy.sh
+      - name: Create scoped GitHub App token
+        if: ${{ inputs.write_mode == 'propose_changes' }}
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.AUTONOMOUS_WORKER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_WORKER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ env.TARGET_REPO }}
+          permission-contents: write
+          permission-pull-requests: write
       - name: Inspect target
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/test-target"
-          git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
-          TARGET_REPO="$TARGET_REPO" TASK="$TASK" TARGET_CLONE_URL="https://x-access-token:$GH_TOKEN@github.com/$TARGET_REPO.git" bash worker/inspect.sh
+          CLONE_TOKEN="${APP_TOKEN:-$GH_TOKEN}"
+          git clone --depth 1 "https://x-access-token:$CLONE_TOKEN@github.com/$TARGET_REPO.git" "$RUNNER_TEMP/test-target"
+          TARGET_REPO="$TARGET_REPO" TASK="$TASK" TARGET_CLONE_URL="https://x-access-token:$CLONE_TOKEN@github.com/$TARGET_REPO.git" bash worker/inspect.sh
       - name: Install controlled target dependencies
         working-directory: ${{ runner.temp }}/test-target
         run: |
@@ -61,10 +74,59 @@ jobs:
           fi
       - name: Run safe tests
         run: bash worker/test.sh "$RUNNER_TEMP/test-target"
+      - name: Run OpenHands agent
+        if: ${{ inputs.write_mode == 'propose_changes' }}
+        id: openhands
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [ "$RUN_OPENHANDS" != "true" ]; then
+            echo "OPENHANDS_STATUS=not_requested" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [ -z "${OPENHANDS_AGENT_SERVER_URL:-}" ] || [ -z "${OPENHANDS_SESSION_API_KEY:-}" ]; then
+            echo "OPENHANDS_STATUS=not_configured" >> "$GITHUB_ENV"
+            exit 1
+          fi
+          if bash worker/openhands-run.sh; then
+            echo "OPENHANDS_STATUS=finished" >> "$GITHUB_ENV"
+          else
+            echo "OPENHANDS_STATUS=failed" >> "$GITHUB_ENV"
+            exit 1
+          fi
+        env:
+          OPENHANDS_AGENT_SERVER_URL: ${{ secrets.OPENHANDS_AGENT_SERVER_URL }}
+          OPENHANDS_SESSION_API_KEY: ${{ secrets.OPENHANDS_SESSION_API_KEY }}
+          OPENHANDS_WORKING_DIR: ${{ runner.temp }}/test-target
+          OPENHANDS_TASK: ${{ env.TASK }}
+      - name: Run safe tests after agent
+        if: ${{ inputs.write_mode == 'propose_changes' && env.OPENHANDS_STATUS == 'finished' }}
+        run: bash worker/test.sh "$RUNNER_TEMP/test-target"
+      - name: Create draft PR
+        if: ${{ inputs.write_mode == 'propose_changes' && env.OPENHANDS_STATUS == 'finished' }}
+        working-directory: ${{ runner.temp }}/test-target
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if ! git status --porcelain | grep -q .; then
+            echo "No changes were produced by OpenHands."
+            exit 31
+          fi
+          git config user.name "autonomous-worker[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="agent/${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git add -A
+          git diff --cached --check
+          git commit -m "agent: ${TASK:0:72}"
+          git push --set-upstream origin "$branch"
+          base="$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')"
+          gh pr create --draft --repo "$TARGET_REPO" --head "$branch" --base "$base" --title "Agent: ${TASK:0:72}" --body "Autonomous proposal generated only after policy checks, OpenHands execution, post-agent tests, and completion gating."
       - name: Completion gate
         if: always()
         env:
-          OPENHANDS_STATUS: ""
+          OPENHANDS_STATUS: ${{ env.OPENHANDS_STATUS }}
         run: bash worker/completion.sh "$RUNNER_TEMP/test-target"
       - name: Upload reports
         if: always()
