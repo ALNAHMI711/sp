@@ -157,12 +157,21 @@ class ControlQueue:
 
     def cancel(self, job_id: str) -> str | None:
         with self._db() as db:
-            row = db.execute("SELECT status FROM jobs WHERE job_id=?", (job_id,)).fetchone()
-            if row is None:
+            changed = db.execute(
+                """UPDATE jobs
+                   SET status=CASE status
+                       WHEN 'queued' THEN 'cancelled'
+                       WHEN 'running' THEN 'cancel_requested'
+                       ELSE status
+                   END,
+                   updated_at=?
+                   WHERE job_id=?""",
+                (now(), job_id),
+            )
+            if changed.rowcount != 1:
                 return None
-            target = "cancelled" if row["status"] == "queued" else ("cancel_requested" if row["status"] == "running" else row["status"])
-            db.execute("UPDATE jobs SET status=?, updated_at=? WHERE job_id=?", (target, now(), job_id))
-            return target
+            row = db.execute("SELECT status FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        return row["status"]
 
 
     def request_kill_switch(self, reason: str = "kill_switch") -> dict:
