@@ -12,10 +12,24 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from worker.control_queue import ControlQueue
+from worker.postgres_queue import PostgresQueue
 from app.auth import audit, current_user, login, require_scope
 
 app = FastAPI(title="Autonomous Control API", version="0.1.0")
 DB = os.getenv("CONTROL_QUEUE_DB", ".data/control-queue.sqlite3")
+QUEUE_BACKEND = os.getenv("CONTROL_QUEUE_BACKEND", "sqlite").strip().lower()
+POSTGRES_DSN = os.getenv("CONTROL_POSTGRES_DSN", "").strip()
+
+def queue():
+    if QUEUE_BACKEND == "sqlite":
+        return ControlQueue(DB)
+    if QUEUE_BACKEND == "postgres":
+        if not POSTGRES_DSN:
+            raise RuntimeError("CONTROL_POSTGRES_DSN is required for postgres backend")
+        backend = PostgresQueue(POSTGRES_DSN)
+        backend.init()
+        return backend
+    raise RuntimeError("unsupported CONTROL_QUEUE_BACKEND")
 KILL_SWITCH = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
 
 
@@ -32,8 +46,6 @@ class JobRequest(BaseModel):
     max_attempts: int = Field(default=3, ge=1, le=10)
 
 
-def queue() -> ControlQueue:
-    return ControlQueue(DB)
 
 
 @app.post("/auth/login")
