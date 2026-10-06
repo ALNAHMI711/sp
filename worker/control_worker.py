@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -38,6 +39,23 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def run(cmd: list[str], *, env: dict[str, str], timeout: int | None = None) -> int:
     return subprocess.run(cmd, cwd=ROOT, env=env, timeout=timeout, check=False).returncode
+
+
+def start_lease_heartbeat(queue, job_id: str, worker_id: str, lease_seconds: int):
+    stop = threading.Event()
+    interval = max(1, lease_seconds // 3)
+
+    def heartbeat() -> None:
+        while not stop.wait(interval):
+            try:
+                if not queue.renew_lease(job_id, worker_id, lease_seconds):
+                    return
+            except Exception:
+                return
+
+    thread = threading.Thread(target=heartbeat, name=f"lease-{job_id}", daemon=True)
+    thread.start()
+    return stop, thread
 
 
 def cancellation_requested(queue, job_id: str, kill_file: Path) -> bool:
@@ -98,6 +116,7 @@ def main() -> int:
             "INSPECTION_WORKDIR": str(workspace),
         })
 
+        heartbeat_stop, heartbeat_thread = start_lease_heartbeat(queue, job["job_id"], args.worker_id, args.lease_seconds)
         try:
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists() and queue.get(job["job_id"])["status"] == "running":
@@ -183,6 +202,8 @@ def main() -> int:
         except Exception as exc:
             queue.finish(job["job_id"], False, f"worker_exception:{type(exc).__name__}")
         finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=2)
             shutil.rmtree(workspace, ignore_errors=True)
 
         if args.once:
