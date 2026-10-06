@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       target_repo:
-        description: "Repository owner/name to inspect"
+        description: "Approved repository owner/name"
         required: true
         default: "ALNAHMI711/Ahmed-Alnahmi-711"
       task:
-        description: "Task for the worker"
+        description: "Inspection task"
         required: true
-        default: "Inspect repository, run safe checks, and report blockers"
+        default: "Inspect repository and report blockers"
       write_mode:
-        description: "Safe mode only"
+        description: "Worker permission mode"
         required: true
         type: choice
         options:
@@ -36,19 +36,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Checkout control hub
+        uses: actions/checkout@v4
+
       - name: Guard sensitive operations
-        shell: bash
         run: |
           set -euo pipefail
-          echo "Safety boundary: LIVE trading, production deployment, secret rotation,"
-          echo "withdrawals, and destructive operations are never enabled by this workflow."
-      - name: Inspect target
-        shell: bash
+          echo "LIVE trading, withdrawals, secret rotation, production deployment,"
+          echo "and destructive operations are outside this worker's authority."
+
+      - name: Inspect approved target
         env:
           TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
-          TASK: ${{ inputs.task || 'Inspect repository, run safe checks, and report blockers' }}
-          WRITE_MODE: ${{ inputs.write_mode || 'read_only' }}
-        run: |
-          set -euo pipefail
-          printf 'target_repo=%s\ntask=%s\nwrite_mode=%s\n' "$TARGET_REPO" "$TASK" "$WRITE_MODE"
-          echo "This bootstrap worker intentionally performs no repository writes."
+          TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
+        run: ./worker/inspect.sh
+
+      - name: Upload inspection report
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-inspection-report
+          path: inspection-report.md
