@@ -97,14 +97,16 @@ def cancel_job(job_id: str, user: dict = Depends(current_user)) -> dict:
     return {"job_id": job_id, "status": "cancel_requested"}
 
 
-@app.post("/kill-switch", dependencies=[Depends(require_token)])
-def enable_kill_switch() -> dict:
+@app.post("/kill-switch")
+def enable_kill_switch(user: dict = Depends(current_user)) -> dict:
     KILL_SWITCH.parent.mkdir(parents=True, exist_ok=True)
     KILL_SWITCH.write_text("enabled\n")
+    audit(user["sub"], "kill_switch_enabled")
     return {"enabled": True}
 
 
-@app.delete("/kill-switch", dependencies=[Depends(require_token)])
-def disable_kill_switch() -> dict:
+@app.delete("/kill-switch")
+def disable_kill_switch(user: dict = Depends(current_user)) -> dict:
     KILL_SWITCH.unlink(missing_ok=True)
+    audit(user["sub"], "kill_switch_disabled")
     return {"enabled": False}
