@@ -49,13 +49,13 @@ jobs:
         env:
           TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
           TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
-        run: ./worker/policy.sh
+        run: bash worker/policy.sh
 
       - name: Inspect approved target
         env:
           TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
           TASK: ${{ inputs.task || 'Inspect repository and report blockers' }}
-        run: ./worker/inspect.sh
+        run: bash worker/inspect.sh
 
       - name: Run safe tests
         env:
