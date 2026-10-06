@@ -23,7 +23,7 @@ def bootstrap_admin():
         if db.execute("SELECT 1 FROM admin_users WHERE username=?",(u,)).fetchone() is None:
             db.execute("INSERT INTO admin_users VALUES(?,?,?,0)",(u,password_hash.hash(p),"SUPER_ADMIN"))
 
-ROLE_SCOPES={"SUPER_ADMIN":{"jobs:read","jobs:write","jobs:cancel","kill:write","audit:read"},"ADMIN":{"jobs:read","jobs:write","jobs:cancel","audit:read"},"OPERATOR":{"jobs:read","jobs:write","jobs:cancel"},"VIEWER":{"jobs:read"},"AUTOMATION_AGENT":{"jobs:read","jobs:write"}}
+ROLE_SCOPES={"SUPER_ADMIN":{"jobs:read","jobs:write","jobs:cancel","jobs:approve","kill:write","audit:read"},"ADMIN":{"jobs:read","jobs:write","jobs:cancel","jobs:approve","audit:read"},"OPERATOR":{"jobs:read","jobs:write","jobs:cancel","jobs:approve"},"VIEWER":{"jobs:read"},"AUTOMATION_AGENT":{"jobs:read","jobs:write"}}
 
 
 def login(username,password):
