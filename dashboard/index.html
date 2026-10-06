@@ -16,17 +16,30 @@ textarea{min-height:120px;resize:vertical}button{cursor:pointer;font-weight:700}
 <body>
 <main>
 <h1>لوحة التحكم السحابية</h1>
+
+<div class="card" id="loginCard">
+<h2>تسجيل الدخول</h2>
+<label>اسم المستخدم</label><input id="username" autocomplete="username">
+<label>كلمة المرور</label><input id="password" type="password" autocomplete="current-password">
+<button onclick="login()">دخول</button>
+<pre id="loginResult"></pre>
+</div>
+
+<div id="panel" hidden>
 <div class="card">
 <div class="grid">
 <div>الحالة<br><span id="health" class="status">...</span></div>
 <div>Kill Switch<br><span id="kill" class="status">...</span></div>
+<div>الجلسة<br><span id="session" class="status">...</span></div>
 </div>
+<button onclick="logout()">تسجيل الخروج</button>
 </div>
+
 <div class="card">
 <h2>إضافة مهمة</h2>
-<label>رمز الدخول</label><input id="token" type="password" autocomplete="off">
 <label>المستودع</label>
 <select id="repo">
+<option>ALNAHMI711/sp</option>
 <option>ALNAHMI711/Ahmed-Alnahmi-711</option>
 <option>ALNAHMI711/autonomous-business-manager</option>
 <option>ALNAHMI711/-</option>
@@ -37,28 +50,78 @@ textarea{min-height:120px;resize:vertical}button{cursor:pointer;font-weight:700}
 <button onclick="submitJob()">إرسال إلى الطابور</button>
 <pre id="result"></pre>
 </div>
+
 <div class="card">
 <h2>متابعة Job</h2>
 <label>Job ID</label><input id="job" placeholder="ضع Job ID هنا">
 <button onclick="checkJob()">تحديث الحالة</button>
+<button onclick="cancelJob()">إلغاء المهمة</button>
 <pre id="jobResult"></pre>
+</div>
 </div>
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const auth=()=>({Authorization:"Bearer "+$("token").value});
+let token=sessionStorage.getItem("control_token")||"";
+function headers(){return token?{Authorization:"Bearer "+token}:{}}
+function setLoggedIn(value){
+  $("loginCard").hidden=value;
+  $("panel").hidden=!value;
+  $("session").textContent=value?"متصل":"غير متصل";
+}
+async function login(){
+  const r=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({username:$("username").value,password:$("password").value})});
+  const d=await r.json();
+  if(!r.ok){$("loginResult").textContent=JSON.stringify(d,null,2);return;}
+  token=d.access_token;
+  sessionStorage.setItem("control_token",token);
+  $("password").value="";
+  $("loginResult").textContent="";
+  setLoggedIn(true);
+  refreshHealth();
+}
+function logout(){
+  token="";
+  sessionStorage.removeItem("control_token");
+  setLoggedIn(false);
+  $("jobResult").textContent="";
+}
+async function api(path,options={}){
+  const r=await fetch(path,{...options,headers:{...headers(),...(options.headers||{})}});
+  if(r.status===401){logout();}
+  return r;
+}
 async function refreshHealth(){
- try{const r=await fetch("/api/health");const d=await r.json();$("health").textContent=d.status;$("kill").textContent=d.kill_switch?"مفعّل":"متوقف"}
- catch(e){$("health").textContent="غير متاح"}
+ try{
+   const r=await fetch("/api/health");
+   const d=await r.json();
+   $("health").textContent=d.status;
+   $("kill").textContent=d.kill_switch?"مفعّل":"متوقف";
+ }catch(e){
+   $("health").textContent="غير متاح";
+ }
 }
 async function submitJob(){
- const r=await fetch("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json",...auth()},body:JSON.stringify({target_repo:$("repo").value,task:$("task").value,mode:$("mode").value})});
- const d=await r.json();$("result").textContent=JSON.stringify(d,null,2);if(d.job_id)$("job").value=d.job_id;
+ const r=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({target_repo:$("repo").value,task:$("task").value,mode:$("mode").value})});
+ const d=await r.json();
+ $("result").textContent=JSON.stringify(d,null,2);
+ if(d.job_id)$("job").value=d.job_id;
 }
 async function checkJob(){
- const r=await fetch("/api/jobs/"+encodeURIComponent($("job").value),{headers:auth()});
+ if(!$("job").value)return;
+ const r=await api("/api/jobs/"+encodeURIComponent($("job").value));
  $("jobResult").textContent=JSON.stringify(await r.json(),null,2);
 }
-refreshHealth();setInterval(refreshHealth,15000);
+async function cancelJob(){
+ if(!$("job").value)return;
+ const r=await api("/api/jobs/"+encodeURIComponent($("job").value)+"/cancel",{method:"POST"});
+ $("jobResult").textContent=JSON.stringify(await r.json(),null,2);
+}
+setLoggedIn(Boolean(token));
+if(token)refreshHealth();
+setInterval(()=>{if(token)refreshHealth()},15000);
 </script>
-</body></html>
+</body>
+</html>
