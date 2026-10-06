@@ -40,3 +40,14 @@ def test_policy_is_enforced_at_queue_boundary(tmp_path: Path) -> None:
         queue.enqueue("unknown/repo", "run tests", "read_only")
     with pytest.raises(PermissionError):
         queue.enqueue("ALNAHMI711/sp", "enable LIVE trading", "propose_changes")
+
+
+def test_cancel_states(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    assert queue.cancel(job_id) == "cancelled"
+    assert queue.get(job_id)["status"] == "cancelled"
+    job2 = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    queue.claim("worker-1", lease_seconds=60)
+    assert queue.cancel(job2) == "cancel_requested"
+    assert queue.get(job2)["status"] == "cancel_requested"
