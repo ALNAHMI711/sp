@@ -1,0 +1,54 @@
+name: Autonomous Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: "Repository owner/name to inspect"
+        required: true
+        default: "ALNAHMI711/Ahmed-Alnahmi-711"
+      task:
+        description: "Task for the worker"
+        required: true
+        default: "Inspect repository, run safe checks, and report blockers"
+      write_mode:
+        description: "Safe mode only"
+        required: true
+        type: choice
+        options:
+          - read_only
+          - propose_changes
+        default: read_only
+  schedule:
+    - cron: "17 */2 * * *"
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: autonomous-worker
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Guard sensitive operations
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Safety boundary: LIVE trading, production deployment, secret rotation,"
+          echo "withdrawals, and destructive operations are never enabled by this workflow."
+      - name: Inspect target
+        shell: bash
+        env:
+          TARGET_REPO: ${{ inputs.target_repo || 'ALNAHMI711/Ahmed-Alnahmi-711' }}
+          TASK: ${{ inputs.task || 'Inspect repository, run safe checks, and report blockers' }}
+          WRITE_MODE: ${{ inputs.write_mode || 'read_only' }}
+        run: |
+          set -euo pipefail
+          printf 'target_repo=%s\ntask=%s\nwrite_mode=%s\n' "$TARGET_REPO" "$TASK" "$WRITE_MODE"
+          echo "This bootstrap worker intentionally performs no repository writes."
