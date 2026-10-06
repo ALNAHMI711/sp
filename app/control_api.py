@@ -83,18 +83,19 @@ def create_job(payload: JobRequest, user: dict = Depends(current_user)) -> dict:
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str, user: dict = Depends(current_user)) -> dict:
-    with queue()._db() as db:
-        row = db.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+    row = queue().get(job_id)
     if row is None:
         raise HTTPException(status_code=404, detail="job not found")
-    return dict(row)
+    return row
 
 
 @app.post("/jobs/{job_id}/cancel")
 def cancel_job(job_id: str, user: dict = Depends(current_user)) -> dict:
-    queue().cancel(job_id)
-    audit(user["sub"], "job_cancel_requested", job_id)
-    return {"job_id": job_id, "status": "cancel_requested"}
+    status = queue().cancel(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    audit(user["sub"], "job_cancel_requested", job_id, status)
+    return {"job_id": job_id, "status": status}
 
 
 @app.post("/kill-switch")
