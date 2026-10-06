@@ -1,0 +1,54 @@
+services:
+  control-api:
+    build:
+      context: ..
+      dockerfile: deploy/control-api/Dockerfile
+    restart: unless-stopped
+    environment:
+      CONTROL_QUEUE_DB: /app/data/control-queue.sqlite3
+      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN:?set CONTROL_API_TOKEN in environment}
+      CONTROL_KILL_SWITCH_FILE: /app/data/KILL_SWITCH
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - control-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/worker.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./worker.env
+    environment:
+      CONTROL_QUEUE_DB: /app/data/control-queue.sqlite3
+    volumes:
+      - control-data:/app/data
+      - worker-workspaces:/app/workspaces
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      control-api:
+        condition: service_healthy
+
+volumes:
+  control-data:
+  worker-workspaces:
