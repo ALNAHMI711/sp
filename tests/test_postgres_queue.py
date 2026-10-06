@@ -21,6 +21,7 @@ def queue():
 
 def test_postgres_queue_lifecycle(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-lifecycle")
+    assert queue.approve(job_id)
     job = queue.claim("worker-a")
     assert job and job["job_id"] == job_id
     assert queue.finish(job_id, True)
@@ -34,8 +35,10 @@ def test_postgres_queue_idempotency(queue):
 
 
 def test_postgres_two_workers_claim_distinct_jobs(queue):
-    queue.enqueue("ALNAHMI711/sp", "job one", "read_only", "pg-worker-1")
-    queue.enqueue("ALNAHMI711/sp", "job two", "read_only", "pg-worker-2")
+    first = queue.enqueue("ALNAHMI711/sp", "job one", "read_only", "pg-worker-1")
+    second = queue.enqueue("ALNAHMI711/sp", "job two", "read_only", "pg-worker-2")
+    assert queue.approve(first)
+    assert queue.approve(second)
     with ThreadPoolExecutor(max_workers=2) as pool:
         claimed = list(pool.map(lambda wid: queue.claim(wid), ("worker-a", "worker-b")))
     ids = {row["job_id"] for row in claimed if row}
@@ -44,6 +47,7 @@ def test_postgres_two_workers_claim_distinct_jobs(queue):
 
 def test_postgres_cancel_cannot_be_overwritten(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-cancel")
+    assert queue.approve(job_id)
     queue.claim("worker-a")
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.finish(job_id, True) is False
@@ -53,6 +57,7 @@ def test_postgres_cancel_cannot_be_overwritten(queue):
 
 def test_postgres_expired_lease_recovery(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-recovery")
+    assert queue.approve(job_id)
     queue.claim("worker-a", lease_seconds=1)
     with queue._connect() as db:
         db.execute(
