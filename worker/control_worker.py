@@ -42,19 +42,22 @@ def run(cmd: list[str], *, env: dict[str, str], timeout: int | None = None) -> i
 
 def start_lease_heartbeat(queue, job_id: str, worker_id: str, lease_seconds: int):
     stop = threading.Event()
+    lost = threading.Event()
     interval = max(1, lease_seconds // 3)
 
     def heartbeat() -> None:
         while not stop.wait(interval):
             try:
                 if not queue.renew_lease(job_id, worker_id, lease_seconds):
+                    lost.set()
                     return
             except Exception:
+                lost.set()
                 return
 
     thread = threading.Thread(target=heartbeat, name=f"lease-{job_id}", daemon=True)
     thread.start()
-    return stop, thread
+    return stop, thread, lost
 
 
 def cancellation_requested(queue, job_id: str, kill_file: Path) -> bool:
@@ -115,7 +118,7 @@ def main() -> int:
             "INSPECTION_WORKDIR": str(workspace),
         })
 
-        heartbeat_stop, heartbeat_thread = start_lease_heartbeat(queue, job["job_id"], args.worker_id, args.lease_seconds)
+        heartbeat_stop, heartbeat_thread, lease_lost = start_lease_heartbeat(queue, job["job_id"], args.worker_id, args.lease_seconds)
         try:
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists() and queue.get(job["job_id"])["status"] == "running":
@@ -195,6 +198,9 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_before_finish")
                 continue
 
+            if lease_lost.is_set():
+                queue.finish(job["job_id"], False, "worker_lease_lost")
+                continue
             queue.finish(job["job_id"], True)
         except subprocess.TimeoutExpired:
             queue.finish(job["job_id"], False, "worker_timeout")
