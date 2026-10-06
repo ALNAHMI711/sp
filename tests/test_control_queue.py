@@ -64,10 +64,20 @@ def test_cancel_requested_is_finalized(tmp_path: Path) -> None:
 
 def test_kill_switch_marks_queued_and_running_jobs(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
-    queued = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
     running = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    queued = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
     queue.claim("worker-1", lease_seconds=60)
     result = queue.request_kill_switch()
     assert result == {"queued_cancelled": 1, "running_cancel_requested": 1}
     assert queue.get(queued)["status"] == "cancelled"
     assert queue.get(running)["status"] == "cancel_requested"
+
+def test_finish_cannot_override_cancel_request(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
+    queue.claim("worker-1", lease_seconds=60)
+    assert queue.cancel(job_id) == "cancel_requested"
+    assert queue.finish(job_id, True) is False
+    assert queue.get(job_id)["status"] == "cancel_requested"
+    assert queue.mark_cancelled(job_id, "cancelled_before_finish") is True
+    assert queue.get(job_id)["status"] == "cancelled"
