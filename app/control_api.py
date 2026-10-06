@@ -79,6 +79,19 @@ def create_job(payload: JobRequest, user: dict = Depends(current_user)) -> dict:
     return {"job_id": job_id, "status": "queued"}
 
 
+@app.post("/jobs/{job_id}/approve")
+def approve_job(job_id: str, user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "jobs:approve")
+    approved = queue().approve(job_id)
+    if not approved:
+        row = queue().get(job_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        raise HTTPException(status_code=409, detail="job is not pending approval")
+    audit(user["sub"], "job_approved", job_id)
+    return {"job_id": job_id, "status": "queued"}
+
+
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str, user: dict = Depends(current_user)) -> dict:
     require_scope(user, "jobs:read")
