@@ -55,6 +55,14 @@ def test_postgres_cancel_cannot_be_overwritten(queue):
     assert queue.get(job_id)["status"] == "cancelled"
 
 
+
+def test_postgres_kill_switch_cancels_pending_approval(queue):
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-kill-pending")
+    result = queue.request_kill_switch("emergency")
+    assert result["queued_cancelled"] == 1
+    assert result["running_cancel_requested"] == 0
+    assert queue.get(job_id)["status"] == "cancelled"
+
 def test_postgres_expired_lease_recovery(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-recovery")
     assert queue.approve(job_id)
