@@ -54,6 +54,7 @@ def main() -> int:
             "WRITE_MODE": job["mode"],
             "OPENHANDS_WORKING_DIR": str(workspace),
             "OPENHANDS_TASK": job["task"],
+            "INSPECTION_WORKDIR": str(workspace),
         })
 
         try:
@@ -66,11 +67,6 @@ def main() -> int:
             if inspect_rc != 0:
                 queue.finish(job["job_id"], False, "inspection_failed")
                 continue
-
-            # The inspection script owns the initial clone. Reuse its workspace.
-            inspected = Path(os.environ.get("RUNNER_TEMP", "")) / "autonomous-target"
-            if inspected.exists():
-                shutil.copytree(inspected, workspace, dirs_exist_ok=True)
 
             if job["mode"] == "propose_changes":
                 if not os.environ.get("OPENHANDS_AGENT_SERVER_URL") or not os.environ.get("OPENHANDS_SESSION_API_KEY"):
