@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import uuid
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import psycopg
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     attempts INTEGER NOT NULL DEFAULT 0,
     max_attempts INTEGER NOT NULL DEFAULT 3,
     worker_id TEXT,
+    lease_token TEXT,
     lease_until TIMESTAMPTZ,
     last_error TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL,
@@ -113,6 +115,7 @@ class PostgresQueue:
         if not worker_id.strip() or lease_seconds < 1:
             raise ValueError("worker_id and positive lease_seconds are required")
         stamp, lease = now(), now() + timedelta(seconds=lease_seconds)
+        lease_token = secrets.token_urlsafe(32)
         with self._connect() as db:
             row = db.execute(
                 """SELECT * FROM jobs
@@ -125,33 +128,33 @@ class PostgresQueue:
                 return None
             claimed = db.execute(
                 """UPDATE jobs SET status='running', attempts=attempts+1,
-                   worker_id=%s, lease_until=%s, updated_at=%s
+                   worker_id=%s, lease_token=%s, lease_until=%s, updated_at=%s
                    WHERE job_id=%s AND status='queued'
                    RETURNING *""",
-                (worker_id, lease, stamp, row["job_id"]),
+                (worker_id, lease_token, lease, stamp, row["job_id"]),
             ).fetchone()
             return dict(claimed) if claimed else None
 
-    def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900) -> bool:
+    def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900, lease_token: str | None = None) -> bool:
         if lease_seconds < 1:
             raise ValueError("lease_seconds must be positive")
         lease = now() + timedelta(seconds=lease_seconds)
         with self._connect() as db:
             result = db.execute(
                 """UPDATE jobs SET lease_until=%s, updated_at=%s
-                   WHERE job_id=%s AND worker_id=%s AND status='running'""",
-                (lease, now(), job_id, worker_id),
+                   WHERE job_id=%s AND worker_id=%s AND status='running' AND (%s IS NULL OR lease_token=%s)""",
+                (lease, now(), job_id, worker_id, lease_token, lease_token),
             )
         return result.rowcount == 1
 
-    def finish(self, job_id: str, success: bool, error: str = "", worker_id: str | None = None) -> bool:
+    def finish(self, job_id: str, success: bool, error: str = "", worker_id: str | None = None, lease_token: str | None = None) -> bool:
         status = "succeeded" if success else "failed"
         with self._connect() as db:
             result = db.execute(
-                """UPDATE jobs SET status=%s, worker_id=NULL, lease_until=NULL,
+                """UPDATE jobs SET status=%s, worker_id=NULL, lease_token=NULL, lease_until=NULL,
                    last_error=%s, updated_at=%s
-                   WHERE job_id=%s AND (worker_id=%s OR %s IS NULL) AND status='running'""",
-                (status, error[:2000], now(), job_id, worker_id, worker_id),
+                   WHERE job_id=%s AND (worker_id=%s OR %s IS NULL) AND status='running' AND (%s IS NULL OR lease_token=%s)""",
+                (status, error[:2000], now(), job_id, worker_id, worker_id, lease_token, lease_token),
             )
         return result.rowcount == 1
 
