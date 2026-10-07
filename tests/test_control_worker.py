@@ -99,3 +99,20 @@ def test_worker_a_cannot_renew_or_finish_after_recovery(tmp_path) -> None:
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
     assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a") is False
     assert queue.finish(job_id, True, worker_id="worker-b") is True
+
+
+def test_lease_heartbeat_treats_backend_error_as_lease_loss() -> None:
+    from control_worker import start_lease_heartbeat
+
+    class Queue:
+        def renew_lease(self, job_id, worker_id, lease_seconds, lease_token=None):
+            raise RuntimeError("queue unavailable")
+
+    stop, thread, lost = start_lease_heartbeat(Queue(), "job-2", "worker-1", 1)
+    try:
+        assert lost.wait(timeout=2)
+        assert lost.is_set()
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
