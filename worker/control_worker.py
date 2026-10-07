@@ -20,6 +20,7 @@ from pathlib import Path
 from control_queue import ControlQueue
 from postgres_queue import PostgresQueue
 from worker_registry import WorkerRegistry
+from postgres_worker_registry import PostgresWorkerRegistry
 
 
 def build_queue(db: str):
@@ -141,7 +142,10 @@ def main() -> int:
         parser.error("--openhands-timeout-seconds must be zero or positive")
 
     queue = build_queue(args.db)
-    registry = WorkerRegistry(os.getenv("CONTROL_WORKER_REGISTRY_DB", str(Path(args.db).with_name("workers.sqlite3"))))
+    if os.getenv("CONTROL_QUEUE_BACKEND", "sqlite").strip().lower() == "postgres":
+        registry = PostgresWorkerRegistry(os.environ["CONTROL_POSTGRES_DSN"])
+    else:
+        registry = WorkerRegistry(os.getenv("CONTROL_WORKER_REGISTRY_DB", str(Path(args.db).with_name("workers.sqlite3"))))
     worker_version = os.getenv("CONTROL_WORKER_VERSION", "0.1.0")
     registry.heartbeat(args.worker_id, os.uname().nodename, worker_version)
     kill_file = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
