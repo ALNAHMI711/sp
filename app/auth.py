@@ -1,6 +1,6 @@
 """Local admin authentication store for the control plane."""
 from __future__ import annotations
-import os, sqlite3
+import os, sqlite3, uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, Request
 import jwt
@@ -14,6 +14,7 @@ def _db():
     db=sqlite3.connect(DB,timeout=10); db.row_factory=sqlite3.Row
     db.execute("CREATE TABLE IF NOT EXISTS admin_users(username TEXT PRIMARY KEY,password_hash TEXT NOT NULL,role TEXT NOT NULL DEFAULT 'SUPER_ADMIN',disabled INTEGER NOT NULL DEFAULT 0)")
     db.execute("CREATE TABLE IF NOT EXISTS audit_events(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT,action TEXT NOT NULL,target TEXT,detail TEXT,created_at TEXT NOT NULL)")
+    db.execute("CREATE TABLE IF NOT EXISTS auth_sessions(jti TEXT PRIMARY KEY,username TEXT NOT NULL,expires_at TEXT NOT NULL,revoked_at TEXT)")
     return db
 
 def bootstrap_admin():
@@ -34,7 +35,13 @@ def login(username,password):
         raise HTTPException(status_code=401,detail="invalid credentials")
     exp=datetime.now(timezone.utc)+timedelta(minutes=30)
     role=user["role"]
-    return jwt.encode({"sub":username,"role":role,"scopes":sorted(ROLE_SCOPES.get(role,set())),"exp":exp},JWT_SECRET,algorithm="HS256")
+    jti=uuid.uuid4().hex
+    with _db() as db:
+        db.execute(
+            "INSERT INTO auth_sessions(jti,username,expires_at) VALUES(?,?,?)",
+            (jti, username, exp.isoformat()),
+        )
+    return jwt.encode({"sub":username,"role":role,"scopes":sorted(ROLE_SCOPES.get(role,set())),"jti":jti,"exp":exp},JWT_SECRET,algorithm="HS256")
 
 def require_scope(user:dict, scope:str):
     if scope not in set(user.get("scopes", [])):
@@ -46,8 +53,32 @@ def current_user(request:Request):
     if not JWT_SECRET: raise HTTPException(status_code=503,detail="authentication is not configured")
     value=request.headers.get("authorization","")
     if not value.startswith("Bearer "): raise HTTPException(status_code=401,detail="authentication required")
-    try:return jwt.decode(value[7:],JWT_SECRET,algorithms=["HS256"])
-    except jwt.PyJWTError as exc:raise HTTPException(status_code=401,detail="invalid or expired token") from exc
+    try:
+        payload=jwt.decode(value[7:],JWT_SECRET,algorithms=["HS256"])
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=401,detail="invalid or expired token") from exc
+    jti=payload.get("jti")
+    username=payload.get("sub")
+    if not jti or not username:
+        raise HTTPException(status_code=401,detail="invalid session")
+    with _db() as db:
+        session=db.execute(
+            "SELECT s.revoked_at,s.expires_at,u.disabled FROM auth_sessions s "
+            "JOIN admin_users u ON u.username=s.username WHERE s.jti=? AND s.username=?",
+            (jti,username),
+        ).fetchone()
+    if not session or session["revoked_at"] is not None or session["disabled"]:
+        raise HTTPException(status_code=401,detail="session revoked")
+    if datetime.fromisoformat(session["expires_at"]) <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=401,detail="session expired")
+    return payload
+def revoke_session(jti: str) -> bool:
+    with _db() as db:
+        changed=db.execute(
+            "UPDATE auth_sessions SET revoked_at=? WHERE jti=? AND revoked_at IS NULL",
+            (datetime.now(timezone.utc).isoformat(), jti),
+        )
+        return changed.rowcount == 1
 
 def audit(username,action,target="",detail=""):
     with _db() as db:db.execute("INSERT INTO audit_events(username,action,target,detail,created_at) VALUES(?,?,?,?,?)",(username,action,target,detail[:2000],datetime.now(timezone.utc).isoformat()))
