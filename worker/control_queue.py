@@ -71,6 +71,9 @@ class ControlQueue:
                     updated_at TEXT NOT NULL
                 )
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(jobs)").fetchall()}
+            if "lease_token" not in columns:
+                db.execute("ALTER TABLE jobs ADD COLUMN lease_token TEXT")
             db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_ready ON jobs(status, created_at)")
 
     def ping(self) -> bool:
