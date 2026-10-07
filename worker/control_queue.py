@@ -111,6 +111,7 @@ class ControlQueue:
             raise ValueError("worker_id and positive lease_seconds are required")
         stamp = now()
         lease = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
+        lease_token = secrets.token_urlsafe(32)
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
