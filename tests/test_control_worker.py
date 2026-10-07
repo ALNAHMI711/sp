@@ -101,9 +101,6 @@ def test_worker_a_cannot_renew_or_finish_after_recovery(tmp_path) -> None:
     assert queue.finish(job_id, True) is True
 
 
-def test_worker_a_cannot_renew_or_finish_after_recovery(tmp_path) -> None:
-    from control_queue import ControlQueue
-
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "failover integration", "read_only", max_attempts=3)
     assert queue.approve(job_id)
