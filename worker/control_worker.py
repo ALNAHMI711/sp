@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -36,8 +37,51 @@ def build_queue(db: str):
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def run(cmd: list[str], *, env: dict[str, str], timeout: int | None = None) -> int:
-    return subprocess.run(cmd, cwd=ROOT, env=env, timeout=timeout, check=False).returncode
+def run(
+    cmd: list[str],
+    *,
+    env: dict[str, str],
+    timeout: int | None = None,
+    should_stop=None,
+) -> int:
+    """Run a child process that can be interrupted by cancellation or lease loss."""
+    process = subprocess.Popen(
+        cmd,
+        cwd=ROOT,
+        env=env,
+        start_new_session=True,
+    )
+    started = time.monotonic()
+    try:
+        while True:
+            rc = process.poll()
+            if rc is not None:
+                return rc
+            if timeout is not None and time.monotonic() - started >= timeout:
+                _terminate_process_group(process)
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            if should_stop is not None and should_stop():
+                _terminate_process_group(process)
+                return 125
+            time.sleep(0.5)
+    finally:
+        if process.poll() is None:
+            _terminate_process_group(process)
+
+
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        process.wait(timeout=5)
 
 
 def start_lease_heartbeat(queue, job_id: str, worker_id: str, lease_seconds: int):
