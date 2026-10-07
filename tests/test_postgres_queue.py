@@ -99,3 +99,4 @@ def test_postgres_expired_worker_cannot_finish_after_recovery(queue):
     assert reclaimed and reclaimed["job_id"] == job_id
     assert queue.finish(job_id, True) is True
     assert queue.finish(job_id, False, "stale-worker") is False
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
