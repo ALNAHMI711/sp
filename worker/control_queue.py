@@ -18,7 +18,7 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-from repo_policy import approved_repositories
+from worker.repo_policy import approved_repositories
 
 SENSITIVE_TASK = __import__("re").compile(
     r"(LIVE|live trading|withdrawal|withdrawals|secret rotation|rotate secret|"
