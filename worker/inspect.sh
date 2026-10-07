@@ -11,10 +11,11 @@ if [ -n "${CONTROL_ALLOWED_REPOS:-}" ]; then
     *) echo "Blocked: target repository is not in the configured allowlist."; exit 2 ;;
   esac
 else
-  grep -Fxq "$TARGET_REPO" "$(dirname "$0")/approved_repositories.txt"
+  if ! grep -Fxq "$TARGET_REPO" "$(dirname "$0")/approved_repositories.txt"; then
+    echo "Blocked: target repository is not in the approved initial set."
+    exit 2
+  fi
 fi
-if [ "$?" -ne 0 ]; then echo "Blocked: target repository is not in the approved initial set."; exit 2 ;;
-esac
 
 rm -rf "$WORKDIR"
 mkdir -p "$WORKDIR"
