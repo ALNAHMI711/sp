@@ -1,0 +1,6 @@
+# One owner/repository per line. Keep this list explicit and review changes.
+ALNAHMI711/Ahmed-Alnahmi-711
+ALNAHMI711/autonomous-business-manager
+ALNAHMI711/-
+ALNAHMI711/tte
+ALNAHMI711/sp
