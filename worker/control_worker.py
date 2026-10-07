@@ -302,14 +302,19 @@ def main() -> int:
                 continue
             queue.finish(job["job_id"], True)
         except subprocess.TimeoutExpired:
-            if cancellation_requested(queue, job["job_id"], kill_file):
+            if lease_lost.is_set():
+                queue.finish(job["job_id"], False, "worker_lease_lost")
+            elif cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
                     queue.cancel(job["job_id"])
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_timeout")
             else:
                 queue.finish(job["job_id"], False, "worker_timeout")
         except Exception as exc:
-            queue.finish(job["job_id"], False, f"worker_exception:{type(exc).__name__}")
+            if lease_lost.is_set():
+                queue.finish(job["job_id"], False, "worker_lease_lost")
+            else:
+                queue.finish(job["job_id"], False, f"worker_exception:{type(exc).__name__}")
         finally:
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=2)
