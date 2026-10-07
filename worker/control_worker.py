@@ -195,12 +195,18 @@ def main() -> int:
         def should_stop() -> bool:
             return cancellation_requested(queue, job["job_id"], kill_file) or lease_lost.is_set()
 
+        def lease_loss_requested() -> bool:
+            return lease_lost.is_set()
+
         try:
             if should_stop():
                 request_cancellation(queue, job["job_id"], kill_file)
                 cancel_and_continue(queue, job["job_id"], "cancelled_before_start")
                 continue
             policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env, should_stop=should_stop)
+            if lease_loss_requested():
+                queue.finish(job["job_id"], False, "worker_lease_lost")
+                continue
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
                     queue.cancel(job["job_id"])
@@ -211,6 +217,9 @@ def main() -> int:
                 continue
 
             inspect_rc = run(["bash", str(ROOT / "worker/inspect.sh")], env=env, should_stop=should_stop)
+            if lease_loss_requested():
+                queue.finish(job["job_id"], False, "worker_lease_lost")
+                continue
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
                     queue.cancel(job["job_id"])
@@ -237,6 +246,9 @@ def main() -> int:
                     timeout=openhands_timeout,
                     should_stop=should_stop,
                 )
+                if lease_loss_requested():
+                    queue.finish(job["job_id"], False, "worker_lease_lost")
+                    continue
                 if rc != 0:
                     latest = queue.get(job["job_id"])
                     if (latest and latest["status"] == "cancel_requested") or kill_file.exists():
@@ -252,6 +264,9 @@ def main() -> int:
                 continue
 
             test_rc = run(["bash", str(ROOT / "worker/test.sh"), str(repo_dir)], env=env, should_stop=should_stop)
+            if lease_loss_requested():
+                queue.finish(job["job_id"], False, "worker_lease_lost")
+                continue
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
                     queue.cancel(job["job_id"])
@@ -269,6 +284,9 @@ def main() -> int:
 
             completion_env = env | {"OPENHANDS_STATUS": "finished" if job["mode"] == "propose_changes" else "not_requested"}
             completion_rc = run(["bash", str(ROOT / "worker/completion.sh"), str(repo_dir)], env=completion_env, should_stop=should_stop)
+            if lease_loss_requested():
+                queue.finish(job["job_id"], False, "worker_lease_lost")
+                continue
             if completion_rc != 0:
                 queue.finish(job["job_id"], False, "completion_gate_failed")
                 continue
