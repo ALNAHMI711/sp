@@ -205,3 +205,13 @@ def test_recovered_worker_cannot_finish_after_new_worker_cancels(tmp_path: Path)
     assert queue.mark_cancelled(job_id, "worker-b_cancelled") is True
     assert queue.finish(job_id, True) is False
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+
+
+def test_wrong_worker_cannot_finish_active_job(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "finish-owner")
+    assert queue.approve(job_id)
+    assert queue.claim("worker-a", lease_seconds=60)
+    assert queue.finish(job_id, True, worker_id="worker-b") is False
+    assert queue.get(job_id)["status"] == "running"
+    assert queue.finish(job_id, True, worker_id="worker-a") is True
