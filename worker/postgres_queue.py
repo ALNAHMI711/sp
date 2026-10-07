@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 from psycopg.rows import dict_row
 
-from repo_policy import approved_repositories
+from worker.repo_policy import approved_repositories
 
 SENSITIVE_TASK = re.compile(
     r"(LIVE|live trading|withdrawal|withdrawals|secret rotation|rotate secret|"
