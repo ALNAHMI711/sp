@@ -28,7 +28,7 @@ def test_idempotency_and_recovery(tmp_path: Path) -> None:
     assert queue.recover_expired() == 1
     claimed_again = queue.claim("worker-2", lease_seconds=60)
     assert claimed_again and claimed_again["job_id"] == job_id
-    queue.finish(job_id, True)
+    assert queue.finish(job_id, True, worker_id="worker-2", lease_token=queue.get(job_id)["lease_token"])
 
     with queue._db() as db:
         row = db.execute("SELECT status FROM jobs WHERE job_id=?", (job_id,)).fetchone()
@@ -83,7 +83,7 @@ def test_finish_cannot_override_cancel_request(tmp_path: Path) -> None:
     assert queue.approve(job_id)
     queue.claim("worker-1", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
-    assert queue.finish(job_id, True) is False
+    assert queue.finish(job_id, True, worker_id="worker-1", lease_token="wrong") is False
     assert queue.get(job_id)["status"] == "cancel_requested"
     assert queue.mark_cancelled(job_id, "cancelled_before_finish") is True
     assert queue.get(job_id)["status"] == "cancelled"
@@ -158,7 +158,7 @@ def test_expired_worker_cannot_finish_after_recovery(tmp_path: Path) -> None:
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.finish(job_id, True) is False
     assert queue.mark_cancelled(job_id, "recovered_job_cancelled") is True
-    assert queue.finish(job_id, False, "stale-worker") is False
+    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-1", lease_token="stale") is False
     assert queue.renew_lease(job_id, "worker-1", lease_seconds=60) is False
 
 def test_renew_lease_keeps_active_job_owned(tmp_path: Path) -> None:
@@ -212,6 +212,6 @@ def test_wrong_worker_cannot_finish_active_job(tmp_path: Path) -> None:
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "finish-owner")
     assert queue.approve(job_id)
     assert queue.claim("worker-a", lease_seconds=60)
-    assert queue.finish(job_id, True, worker_id="worker-b") is False
+    assert queue.finish(job_id, True, worker_id="worker-b", lease_token="wrong") is False
     assert queue.get(job_id)["status"] == "running"
-    assert queue.finish(job_id, True, worker_id="worker-a") is True
+    assert queue.finish(job_id, True, worker_id="worker-a", lease_token=queue.get(job_id)["lease_token"]) is True
