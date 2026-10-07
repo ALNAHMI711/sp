@@ -99,3 +99,27 @@ def test_worker_a_cannot_renew_or_finish_after_recovery(tmp_path) -> None:
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
     assert queue.finish(job_id, False, "stale-worker") is False
     assert queue.finish(job_id, True) is True
+
+
+def test_worker_a_cannot_renew_or_finish_after_recovery(tmp_path) -> None:
+    from control_queue import ControlQueue
+
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "failover integration", "read_only", max_attempts=3)
+    assert queue.approve(job_id)
+    claimed = queue.claim("worker-a", lease_seconds=1)
+    assert claimed and claimed["job_id"] == job_id
+
+    with queue._db() as db:
+        db.execute(
+            "UPDATE jobs SET lease_until=? WHERE job_id=?",
+            ("2000-01-01T00:00:00+00:00", job_id),
+        )
+
+    assert queue.recover_expired() == 1
+    reclaimed = queue.claim("worker-b", lease_seconds=60)
+    assert reclaimed and reclaimed["job_id"] == job_id
+
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+    assert queue.finish(job_id, False, "stale-worker") is False
+    assert queue.finish(job_id, True) is True
