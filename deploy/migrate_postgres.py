@@ -7,6 +7,16 @@ import psycopg
 
 SCHEMA = "CREATE TABLE IF NOT EXISTS schema_migrations (\n    version TEXT PRIMARY KEY,\n    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\n\nCREATE TABLE IF NOT EXISTS jobs (\n    job_id TEXT PRIMARY KEY,\n    idempotency_key TEXT NOT NULL UNIQUE,\n    target_repo TEXT NOT NULL,\n    task TEXT NOT NULL,\n    mode TEXT NOT NULL,\n    status TEXT NOT NULL DEFAULT 'pending_approval',\n    attempts INTEGER NOT NULL DEFAULT 0,\n    max_attempts INTEGER NOT NULL DEFAULT 3,\n    worker_id TEXT,\n    lease_until TIMESTAMPTZ,\n    last_error TEXT NOT NULL DEFAULT '',\n    created_at TIMESTAMPTZ NOT NULL,\n    updated_at TIMESTAMPTZ NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_jobs_ready ON jobs(status, created_at);\nCREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs(status, lease_until);
 
+CREATE TABLE IF NOT EXISTS workers (
+    worker_id TEXT PRIMARY KEY,
+    hostname TEXT NOT NULL DEFAULT '',
+    version TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'online',
+    last_seen TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workers_last_seen ON workers(last_seen);
+
 -- Existing installations retain their current lifecycle; only new jobs use the approval gate.\n"
 
 def main() -> None:
