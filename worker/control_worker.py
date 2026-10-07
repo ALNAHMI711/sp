@@ -86,7 +86,7 @@ def _terminate_process_group(process: subprocess.Popen) -> None:
         process.wait(timeout=5)
 
 
-def start_lease_heartbeat(queue, job_id: str, worker_id: str, lease_seconds: int):
+def start_lease_heartbeat(queue, job_id: str, worker_id: str, lease_seconds: int, lease_token: str | None = None):
     stop = threading.Event()
     lost = threading.Event()
     interval = max(1, lease_seconds // 3)
@@ -94,7 +94,7 @@ def start_lease_heartbeat(queue, job_id: str, worker_id: str, lease_seconds: int
     def heartbeat() -> None:
         while not stop.wait(interval):
             try:
-                if not queue.renew_lease(job_id, worker_id, lease_seconds):
+                if not queue.renew_lease(job_id, worker_id, lease_seconds, lease_token):
                     lost.set()
                     return
             except Exception:
@@ -191,7 +191,7 @@ def main() -> int:
             "INSPECTION_WORKDIR": str(workspace),
         })
 
-        heartbeat_stop, heartbeat_thread, lease_lost = start_lease_heartbeat(queue, job["job_id"], args.worker_id, args.lease_seconds)
+        heartbeat_stop, heartbeat_thread, lease_lost = start_lease_heartbeat(queue, job["job_id"], args.worker_id, args.lease_seconds, job.get("lease_token"))
         def should_stop() -> bool:
             return cancellation_requested(queue, job["job_id"], kill_file) or lease_lost.is_set()
 
@@ -205,7 +205,7 @@ def main() -> int:
                 continue
             policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env, should_stop=should_stop)
             if lease_loss_requested():
-                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
+                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id, job.get("lease_token"))
                 continue
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
@@ -213,7 +213,7 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_policy")
                 continue
             if policy_rc != 0:
-                queue.finish(job["job_id"], False, "policy_blocked", args.worker_id)
+                queue.finish(job["job_id"], False, "policy_blocked", args.worker_id, job.get("lease_token"))
                 continue
 
             inspect_rc = run(["bash", str(ROOT / "worker/inspect.sh")], env=env, should_stop=should_stop)
@@ -226,7 +226,7 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_inspection")
                 continue
             if inspect_rc != 0:
-                queue.finish(job["job_id"], False, "inspection_failed", args.worker_id)
+                queue.finish(job["job_id"], False, "inspection_failed", args.worker_id, job.get("lease_token"))
                 continue
 
             if cancellation_requested(queue, job["job_id"], kill_file):
@@ -237,7 +237,7 @@ def main() -> int:
 
             if job["mode"] == "propose_changes":
                 if not os.environ.get("OPENHANDS_AGENT_SERVER_URL") or not os.environ.get("OPENHANDS_SESSION_API_KEY"):
-                    queue.finish(job["job_id"], False, "openhands_not_configured", args.worker_id)
+                    queue.finish(job["job_id"], False, "openhands_not_configured", args.worker_id, job.get("lease_token"))
                     continue
                 openhands_timeout = args.openhands_timeout_seconds or None
                 rc = run(
@@ -254,7 +254,7 @@ def main() -> int:
                     if (latest and latest["status"] == "cancel_requested") or kill_file.exists():
                         queue.mark_cancelled(job["job_id"], "cancelled_during_openhands")
                     else:
-                        queue.finish(job["job_id"], False, f"openhands_failed:{rc}", args.worker_id)
+                        queue.finish(job["job_id"], False, f"openhands_failed:{rc}", args.worker_id, job.get("lease_token"))
                     continue
 
             if cancellation_requested(queue, job["job_id"], kill_file):
@@ -273,7 +273,7 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_tests")
                 continue
             if test_rc != 0:
-                queue.finish(job["job_id"], False, "tests_failed", args.worker_id)
+                queue.finish(job["job_id"], False, "tests_failed", args.worker_id, job.get("lease_token"))
                 continue
 
             if cancellation_requested(queue, job["job_id"], kill_file):
@@ -288,7 +288,7 @@ def main() -> int:
                 queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
                 continue
             if completion_rc != 0:
-                queue.finish(job["job_id"], False, "completion_gate_failed", args.worker_id)
+                queue.finish(job["job_id"], False, "completion_gate_failed", args.worker_id, job.get("lease_token"))
                 continue
 
             if cancellation_requested(queue, job["job_id"], kill_file):
@@ -300,7 +300,7 @@ def main() -> int:
             if lease_lost.is_set():
                 queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
                 continue
-            queue.finish(job["job_id"], True, worker_id=args.worker_id)
+            queue.finish(job["job_id"], True, worker_id=args.worker_id, lease_token=job.get("lease_token"))
         except subprocess.TimeoutExpired:
             if lease_lost.is_set():
                 queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
@@ -309,12 +309,12 @@ def main() -> int:
                     queue.cancel(job["job_id"])
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_timeout")
             else:
-                queue.finish(job["job_id"], False, "worker_timeout", args.worker_id)
+                queue.finish(job["job_id"], False, "worker_timeout", args.worker_id, job.get("lease_token"))
         except Exception as exc:
             if lease_lost.is_set():
                 queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
             else:
-                queue.finish(job["job_id"], False, f"worker_exception:{type(exc).__name__}", args.worker_id)
+                queue.finish(job["job_id"], False, f"worker_exception:{type(exc).__name__}", args.worker_id, job.get("lease_token"))
         finally:
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=2)
