@@ -59,3 +59,19 @@ def test_lease_heartbeat_detects_lost_lease() -> None:
         stop.set()
         thread.join(timeout=2)
         assert not thread.is_alive()
+
+
+def test_lease_heartbeat_marks_loss_on_queue_error() -> None:
+    from control_worker import start_lease_heartbeat
+
+    class Queue:
+        def renew_lease(self, job_id, worker_id, lease_seconds):
+            raise RuntimeError("queue unavailable")
+
+    stop, thread, lost = start_lease_heartbeat(Queue(), "job-2", "worker-2", 1)
+    try:
+        assert lost.wait(timeout=2)
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
