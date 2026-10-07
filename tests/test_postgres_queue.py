@@ -122,3 +122,12 @@ def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
     assert queue.finish(job_id, False, "stale-worker") is False
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
     assert queue.get(job_id)["status"] == "cancelled"
+
+
+def test_postgres_wrong_worker_cannot_finish_active_job(queue):
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-finish-owner")
+    assert queue.approve(job_id)
+    assert queue.claim("worker-a", lease_seconds=60)
+    assert queue.finish(job_id, True, worker_id="worker-b") is False
+    assert queue.get(job_id)["status"] == "running"
+    assert queue.finish(job_id, True, worker_id="worker-a") is True
