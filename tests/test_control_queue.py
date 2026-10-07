@@ -215,3 +215,28 @@ def test_wrong_worker_cannot_finish_active_job(tmp_path: Path) -> None:
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token="wrong") is False
     assert queue.get(job_id)["status"] == "running"
     assert queue.finish(job_id, True, worker_id="worker-a", lease_token=queue.get(job_id)["lease_token"]) is True
+
+
+def test_legacy_sqlite_schema_migrates_lease_token(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(db_path) as db:
+        db.execute("""
+            CREATE TABLE jobs (
+                job_id TEXT PRIMARY KEY,
+                idempotency_key TEXT NOT NULL UNIQUE,
+                target_repo TEXT NOT NULL,
+                task TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending_approval',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
+                worker_id TEXT,
+                lease_until TEXT,
+                last_error TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+    queue = ControlQueue(db_path)
+    columns = {row["name"] for row in queue._db().execute("PRAGMA table_info(jobs)").fetchall()}
+    assert "lease_token" in columns
