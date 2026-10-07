@@ -80,7 +80,7 @@ def test_postgres_backend_requires_dsn(tmp_path: Path, monkeypatch) -> None:
     client = configured_client(tmp_path, monkeypatch)
     monkeypatch.setattr(api, "QUEUE_BACKEND", "postgres")
     monkeypatch.setattr(api, "POSTGRES_DSN", "")
-    assert client.get("/health").status_code == 500
+    assert client.get("/health").status_code == 503
 
 def test_health_checks_queue_connectivity(tmp_path: Path, monkeypatch) -> None:
     client = configured_client(tmp_path, monkeypatch)
