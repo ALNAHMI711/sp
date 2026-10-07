@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from worker.control_queue import ControlQueue
 from worker.postgres_queue import PostgresQueue
 from worker.worker_registry import WorkerRegistry
+from worker.postgres_worker_registry import PostgresWorkerRegistry
 from worker.repo_policy import approved_repositories
 from app.auth import audit, current_user, login, require_scope
 
@@ -163,7 +164,12 @@ def approve_job(job_id: str, user: dict = Depends(current_user)) -> dict:
 @app.get("/workers")
 def list_workers(user: dict = Depends(current_user)) -> dict:
     require_scope(user, "jobs:read")
-    registry = WorkerRegistry(WORKER_REGISTRY_DB)
+    if QUEUE_BACKEND == "postgres":
+        if not POSTGRES_DSN:
+            raise HTTPException(status_code=503, detail="CONTROL_POSTGRES_DSN is required")
+        registry = PostgresWorkerRegistry(POSTGRES_DSN)
+    else:
+        registry = WorkerRegistry(WORKER_REGISTRY_DB)
     return {"workers": registry.list()}
 
 
