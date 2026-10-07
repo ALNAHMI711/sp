@@ -4,7 +4,11 @@ import os
 import threading
 import time
 
-from worker.control_worker import run
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "worker"))
+from control_worker import run
 
 
 def test_run_interrupts_child_process_group() -> None:
