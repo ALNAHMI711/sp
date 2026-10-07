@@ -163,13 +163,16 @@ def main() -> int:
         })
 
         heartbeat_stop, heartbeat_thread, lease_lost = start_lease_heartbeat(queue, job["job_id"], args.worker_id, args.lease_seconds)
+        def should_stop() -> bool:
+            return cancellation_requested(queue, job["job_id"], kill_file) or lease_lost.is_set()
+
         try:
-            if cancellation_requested(queue, job["job_id"], kill_file):
+            if should_stop():
                 if kill_file.exists() and queue.get(job["job_id"])["status"] == "running":
                     queue.cancel(job["job_id"])
                 cancel_and_continue(queue, job["job_id"], "cancelled_before_start")
                 continue
-            policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env)
+            policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env, should_stop=should_stop)
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
                     queue.cancel(job["job_id"])
@@ -231,7 +234,7 @@ def main() -> int:
                 continue
 
             completion_env = env | {"OPENHANDS_STATUS": "finished" if job["mode"] == "propose_changes" else "not_requested"}
-            completion_rc = run(["bash", str(ROOT / "worker/completion.sh"), str(repo_dir)], env=completion_env)
+            completion_rc = run(["bash", str(ROOT / "worker/completion.sh"), str(repo_dir)], env=completion_env, should_stop=should_stop)
             if completion_rc != 0:
                 queue.finish(job["job_id"], False, "completion_gate_failed")
                 continue
