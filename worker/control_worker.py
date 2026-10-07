@@ -182,7 +182,7 @@ def main() -> int:
                 queue.finish(job["job_id"], False, "policy_blocked")
                 continue
 
-            inspect_rc = run(["bash", str(ROOT / "worker/inspect.sh")], env=env)
+            inspect_rc = run(["bash", str(ROOT / "worker/inspect.sh")], env=env, should_stop=should_stop)
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
                     queue.cancel(job["job_id"])
@@ -202,7 +202,7 @@ def main() -> int:
                 if not os.environ.get("OPENHANDS_AGENT_SERVER_URL") or not os.environ.get("OPENHANDS_SESSION_API_KEY"):
                     queue.finish(job["job_id"], False, "openhands_not_configured")
                     continue
-                rc = run(["bash", str(ROOT / "worker/openhands-run.sh")], env=env, timeout=args.lease_seconds)
+                rc = run(["bash", str(ROOT / "worker/openhands-run.sh")], env=env, timeout=args.lease_seconds, should_stop=should_stop)
                 if rc != 0:
                     latest = queue.get(job["job_id"])
                     if (latest and latest["status"] == "cancel_requested") or kill_file.exists():
@@ -217,7 +217,7 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_before_tests")
                 continue
 
-            test_rc = run(["bash", str(ROOT / "worker/test.sh"), str(repo_dir)], env=env)
+            test_rc = run(["bash", str(ROOT / "worker/test.sh"), str(repo_dir)], env=env, should_stop=should_stop)
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
                     queue.cancel(job["job_id"])
