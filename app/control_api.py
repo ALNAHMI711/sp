@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from worker.control_queue import ControlQueue
 from worker.postgres_queue import PostgresQueue
+from worker.worker_registry import WorkerRegistry
 from worker.repo_policy import approved_repositories
 from app.auth import audit, current_user, login, require_scope
 
@@ -33,6 +34,7 @@ def queue():
         return PostgresQueue(POSTGRES_DSN)
     raise RuntimeError("unsupported CONTROL_QUEUE_BACKEND")
 KILL_SWITCH = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
+WORKER_REGISTRY_DB = os.getenv("CONTROL_WORKER_REGISTRY_DB", str(Path(DB).with_name("workers.sqlite3")))
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
 CONTROL_ALLOWED_REPOS = approved_repositories()
 
@@ -156,6 +158,13 @@ def approve_job(job_id: str, user: dict = Depends(current_user)) -> dict:
         raise HTTPException(status_code=409, detail="job is not pending approval")
     audit(user["sub"], "job_approved", job_id)
     return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/workers")
+def list_workers(user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "jobs:read")
+    registry = WorkerRegistry(WORKER_REGISTRY_DB)
+    return {"workers": registry.list()}
 
 
 @app.get("/jobs/{job_id}")
