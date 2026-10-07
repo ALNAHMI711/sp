@@ -186,3 +186,22 @@ def test_expired_worker_cannot_renew_after_recovery(tmp_path: Path) -> None:
     assert queue.claim("worker-b", lease_seconds=60)
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
     assert queue.get(job_id)["worker_id"] == "worker-b"
+
+
+def test_recovered_worker_cannot_finish_after_new_worker_cancels(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "cancel-handoff")
+    assert queue.approve(job_id)
+    assert queue.claim("worker-a", lease_seconds=1) is not None
+    with queue._db() as db:
+        db.execute(
+            "UPDATE jobs SET lease_until=? WHERE job_id=?",
+            ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), job_id),
+        )
+    assert queue.recover_expired() == 1
+    assert queue.claim("worker-b", lease_seconds=60)
+    assert queue.cancel(job_id) == "cancel_requested"
+    assert queue.finish(job_id, True) is False
+    assert queue.mark_cancelled(job_id, "worker-b_cancelled") is True
+    assert queue.finish(job_id, True) is False
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
