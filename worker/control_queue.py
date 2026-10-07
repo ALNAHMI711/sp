@@ -162,14 +162,21 @@ class ControlQueue:
             )
             return changed.rowcount == 1
 
-    def finish(self, job_id: str, success: bool, error: str = "") -> bool:
+    def finish(self, job_id: str, success: bool, error: str = "", worker_id: str | None = None) -> bool:
         status = "succeeded" if success else "failed"
         with self._db() as db:
-            changed = db.execute(
-                """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
-                   last_error=?, updated_at=? WHERE job_id=? AND status='running'""",
-                (status, error[:2000], now(), job_id),
-            )
+            if worker_id is None:
+                changed = db.execute(
+                    """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
+                       last_error=?, updated_at=? WHERE job_id=? AND status='running'""",
+                    (status, error[:2000], now(), job_id),
+                )
+            else:
+                changed = db.execute(
+                    """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
+                       last_error=?, updated_at=? WHERE job_id=? AND worker_id=? AND status='running'""",
+                    (status, error[:2000], now(), job_id, worker_id),
+                )
             return changed.rowcount == 1
 
     def get(self, job_id: str) -> dict | None:
