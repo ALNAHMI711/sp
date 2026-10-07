@@ -4,9 +4,15 @@ set -euo pipefail
 TARGET_REPO="${TARGET_REPO:?TARGET_REPO is required}"
 TASK="${TASK:-Inspect repository and report blockers}"
 
-case "$TARGET_REPO" in
-  ALNAHMI711/Ahmed-Alnahmi-711|ALNAHMI711/autonomous-business-manager|ALNAHMI711/-|ALNAHMI711/tte|ALNAHMI711/sp) ;;
-  *) echo "POLICY_DENY: repository not approved"; exit 10 ;;
+if [ -n "${CONTROL_ALLOWED_REPOS:-}" ]; then
+  case ",${CONTROL_ALLOWED_REPOS}," in
+    *,${TARGET_REPO},*) ;;
+    *) echo "Blocked: target repository is not in the configured allowlist."; exit 2 ;;
+  esac
+else
+  grep -Fxq "$TARGET_REPO" "$(dirname "$0")/approved_repositories.txt"
+fi
+if [ "$?" -ne 0 ]; then echo "POLICY_DENY: repository not approved"; exit 10 ;;
 esac
 
 blocked='(LIVE|live trading|withdrawal|withdrawals|secret rotation|rotate secret|production deploy|production deployment|delete repository|drop database|force push|liquidat(e|ion))'
