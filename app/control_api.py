@@ -122,7 +122,10 @@ def auth_login(payload: LoginRequest) -> dict:
 
 @app.get("/health")
 def health() -> dict:
-    queue()
+    try:
+        queue().ping()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="queue backend unavailable") from exc
     return {"status": "ok", "kill_switch": KILL_SWITCH.exists()}
 
 
