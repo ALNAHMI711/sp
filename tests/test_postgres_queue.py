@@ -24,7 +24,7 @@ def test_postgres_queue_lifecycle(queue):
     assert queue.approve(job_id)
     job = queue.claim("worker-a")
     assert job and job["job_id"] == job_id
-    assert queue.finish(job_id, True)
+    assert queue.finish(job_id, True, worker_id="worker-a", lease_token=job["lease_token"])
     assert queue.get(job_id)["status"] == "succeeded"
 
 
@@ -50,7 +50,8 @@ def test_postgres_cancel_cannot_be_overwritten(queue):
     assert queue.approve(job_id)
     queue.claim("worker-a")
     assert queue.cancel(job_id) == "cancel_requested"
-    assert queue.finish(job_id, True) is False
+    current = queue.get(job_id)
+    assert queue.finish(job_id, True, worker_id="worker-a", lease_token=current["lease_token"]) is False
     assert queue.mark_cancelled(job_id, "user_cancel") is True
     assert queue.get(job_id)["status"] == "cancelled"
 
@@ -97,8 +98,8 @@ def test_postgres_expired_worker_cannot_finish_after_recovery(queue):
     assert queue.recover_expired() == 1
     reclaimed = queue.claim("worker-b", lease_seconds=60)
     assert reclaimed and reclaimed["job_id"] == job_id
-    assert queue.finish(job_id, True) is True
-    assert queue.finish(job_id, False, "stale-worker") is False
+    assert queue.finish(job_id, True, worker_id="worker-b", lease_token=reclaimed["lease_token"]) is True
+    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token="stale") is False
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
 
 
@@ -117,9 +118,9 @@ def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
     reclaimed = queue.claim("worker-b", lease_seconds=60)
     assert reclaimed and reclaimed["job_id"] == job_id
     assert queue.cancel(job_id) == "cancel_requested"
-    assert queue.finish(job_id, True) is False
+    assert queue.finish(job_id, True, worker_id="worker-b", lease_token=reclaimed["lease_token"]) is False
     assert queue.mark_cancelled(job_id, "recovered_job_cancelled") is True
-    assert queue.finish(job_id, False, "stale-worker") is False
+    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token="stale") is False
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
     assert queue.get(job_id)["status"] == "cancelled"
 
@@ -128,6 +129,6 @@ def test_postgres_wrong_worker_cannot_finish_active_job(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-finish-owner")
     assert queue.approve(job_id)
     assert queue.claim("worker-a", lease_seconds=60)
-    assert queue.finish(job_id, True, worker_id="worker-b") is False
+    assert queue.finish(job_id, True, worker_id="worker-b", lease_token="wrong") is False
     assert queue.get(job_id)["status"] == "running"
-    assert queue.finish(job_id, True, worker_id="worker-a") is True
+    assert queue.finish(job_id, True, worker_id="worker-a", lease_token=queue.get(job_id)["lease_token"]) is True
