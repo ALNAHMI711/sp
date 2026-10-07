@@ -87,8 +87,6 @@ services:
     depends_on:
       control-api:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
 
 volumes:
   postgres-data:
