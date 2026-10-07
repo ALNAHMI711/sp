@@ -63,6 +63,7 @@ class ControlQueue:
                     attempts INTEGER NOT NULL DEFAULT 0,
                     max_attempts INTEGER NOT NULL DEFAULT 3,
                     worker_id TEXT,
+                    lease_token TEXT,
                     lease_until TEXT,
                     last_error TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
