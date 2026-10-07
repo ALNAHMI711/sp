@@ -11,6 +11,7 @@ def configured_client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(api, "DB", str(db))
     monkeypatch.setattr(api, "QUEUE_BACKEND", "sqlite")
     monkeypatch.setattr(api, "POSTGRES_DSN", "")
+    monkeypatch.setattr(api, "WORKER_REGISTRY_DB", str(tmp_path / "workers.sqlite3"))
     monkeypatch.setattr(api, "KILL_SWITCH", tmp_path / "KILL_SWITCH")
     monkeypatch.setattr(auth, "DB", str(db))
     monkeypatch.setattr(auth, "JWT_SECRET", "test-secret")
