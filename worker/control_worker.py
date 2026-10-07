@@ -113,6 +113,15 @@ def cancellation_requested(queue, job_id: str, kill_file: Path) -> bool:
     return row is None or row["status"] == "cancel_requested"
 
 
+def request_cancellation(queue, job_id: str, kill_file: Path) -> None:
+    """Request cancellation only while the job still exists and is active."""
+    if not kill_file.exists():
+        return
+    row = queue.get(job_id)
+    if row and row["status"] == "running":
+        queue.cancel(job_id)
+
+
 def cancel_and_continue(queue, job_id: str, reason: str) -> bool:
     row = queue.get(job_id)
     if row and row["status"] == "cancel_requested":
@@ -188,8 +197,7 @@ def main() -> int:
 
         try:
             if should_stop():
-                if kill_file.exists() and queue.get(job["job_id"])["status"] == "running":
-                    queue.cancel(job["job_id"])
+                request_cancellation(queue, job["job_id"], kill_file)
                 cancel_and_continue(queue, job["job_id"], "cancelled_before_start")
                 continue
             policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env, should_stop=should_stop)
