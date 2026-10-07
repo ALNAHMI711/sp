@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import uuid
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -120,9 +121,9 @@ class ControlQueue:
                 return None
             changed = db.execute(
                 """UPDATE jobs SET status='running', attempts=attempts+1,
-                   worker_id=?, lease_until=?, updated_at=?
+                   worker_id=?, lease_token=?, lease_until=?, updated_at=?
                    WHERE job_id=? AND status='queued'""",
-                (worker_id, lease, stamp, row["job_id"]),
+                (worker_id, lease_token, lease, stamp, row["job_id"]),
             )
             if changed.rowcount != 1:
                 db.rollback()
@@ -142,7 +143,7 @@ class ControlQueue:
             for row in rows:
                 status = "queued" if row["attempts"] < row["max_attempts"] else "failed"
                 changed = db.execute(
-                    """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
+                    """UPDATE jobs SET status=?, worker_id=NULL, lease_token=NULL, lease_until=NULL,
                        last_error=?, updated_at=? WHERE job_id=? AND status='running'
                        AND lease_until IS NOT NULL AND lease_until<=?""",
                     (status, "worker_lease_expired", stamp, row["job_id"], stamp),
@@ -150,19 +151,19 @@ class ControlQueue:
                 recovered += changed.rowcount
         return recovered
 
-    def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900) -> bool:
+    def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900, lease_token: str | None = None) -> bool:
         if lease_seconds < 1:
             raise ValueError("lease_seconds must be positive")
         lease = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
         with self._db() as db:
             changed = db.execute(
                 """UPDATE jobs SET lease_until=?, updated_at=?
-                   WHERE job_id=? AND worker_id=? AND status='running'""",
-                (lease, now(), job_id, worker_id),
+                   WHERE job_id=? AND worker_id=? AND status='running' AND (? IS NULL OR lease_token=?)""",
+                (lease, now(), job_id, worker_id, lease_token, lease_token),
             )
             return changed.rowcount == 1
 
-    def finish(self, job_id: str, success: bool, error: str = "", worker_id: str | None = None) -> bool:
+    def finish(self, job_id: str, success: bool, error: str = "", worker_id: str | None = None, lease_token: str | None = None) -> bool:
         status = "succeeded" if success else "failed"
         with self._db() as db:
             if worker_id is None:
@@ -174,8 +175,8 @@ class ControlQueue:
             else:
                 changed = db.execute(
                     """UPDATE jobs SET status=?, worker_id=NULL, lease_until=NULL,
-                       last_error=?, updated_at=? WHERE job_id=? AND worker_id=? AND status='running'""",
-                    (status, error[:2000], now(), job_id, worker_id),
+                       last_error=?, updated_at=? WHERE job_id=? AND worker_id=? AND status='running' AND (? IS NULL OR lease_token=?)""",
+                    (status, error[:2000], now(), job_id, worker_id, lease_token, lease_token),
                 )
             return changed.rowcount == 1
 
