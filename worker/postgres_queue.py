@@ -144,14 +144,14 @@ class PostgresQueue:
             )
         return result.rowcount == 1
 
-    def finish(self, job_id: str, success: bool, error: str = "") -> bool:
+    def finish(self, job_id: str, success: bool, error: str = "", worker_id: str | None = None) -> bool:
         status = "succeeded" if success else "failed"
         with self._connect() as db:
             result = db.execute(
                 """UPDATE jobs SET status=%s, worker_id=NULL, lease_until=NULL,
                    last_error=%s, updated_at=%s
-                   WHERE job_id=%s AND status='running'""",
-                (status, error[:2000], now(), job_id),
+                   WHERE job_id=%s AND (worker_id=%s OR %s IS NULL) AND status='running'""",
+                (status, error[:2000], now(), job_id, worker_id, worker_id),
             )
         return result.rowcount == 1
 
