@@ -18,13 +18,8 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-APPROVED_REPOSITORIES = {
-    "ALNAHMI711/Ahmed-Alnahmi-711",
-    "ALNAHMI711/autonomous-business-manager",
-    "ALNAHMI711/-",
-    "ALNAHMI711/tte",
-    "ALNAHMI711/sp",
-}
+from repo_policy import approved_repositories
+
 SENSITIVE_TASK = __import__("re").compile(
     r"(LIVE|live trading|withdrawal|withdrawals|secret rotation|rotate secret|"
     r"production deploy|production deployment|delete repository|drop database|"
@@ -34,7 +29,7 @@ SENSITIVE_TASK = __import__("re").compile(
 
 
 def validate_task(target_repo: str, task: str, mode: str) -> None:
-    if target_repo not in APPROVED_REPOSITORIES:
+    if target_repo not in approved_repositories():
         raise PermissionError("repository is not in the approved initial set")
     if SENSITIVE_TASK.search(task):
         raise PermissionError("sensitive task requires explicit approval")
