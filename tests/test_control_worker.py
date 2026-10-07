@@ -42,3 +42,20 @@ def test_request_cancellation_ignores_missing_job(tmp_path) -> None:
     kill_file = tmp_path / "KILL_SWITCH"
     kill_file.write_text("enabled\n")
     request_cancellation(Queue(), "missing", kill_file)
+
+
+def test_lease_heartbeat_detects_lost_lease() -> None:
+    from control_worker import start_lease_heartbeat
+
+    class Queue:
+        def renew_lease(self, job_id, worker_id, lease_seconds):
+            return False
+
+    stop, thread, lost = start_lease_heartbeat(Queue(), "job-1", "worker-1", 1)
+    try:
+        assert lost.wait(timeout=2)
+        assert lost.is_set()
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
