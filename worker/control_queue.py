@@ -71,6 +71,11 @@ class ControlQueue:
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_ready ON jobs(status, created_at)")
 
+    def ping(self) -> bool:
+        with self._db() as db:
+            db.execute("SELECT 1").fetchone()
+        return True
+
     def enqueue(self, target_repo: str, task: str, mode: str,
                 idempotency_key: str | None = None,
                 max_attempts: int = 3) -> str:
