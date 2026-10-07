@@ -124,9 +124,20 @@ def main() -> int:
     parser.add_argument("--db", default=".data/control-queue.sqlite3")
     parser.add_argument("--worker-id", default=f"worker-{uuid.uuid4()}")
     parser.add_argument("--lease-seconds", type=int, default=1800)
+    parser.add_argument(
+        "--openhands-timeout-seconds",
+        type=int,
+        default=int(os.getenv("CONTROL_OPENHANDS_TIMEOUT_SECONDS", "3600")),
+        help="Maximum runtime for one OpenHands execution; 0 disables this stage timeout.",
+    )
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--poll-seconds", type=int, default=10)
     args = parser.parse_args()
+
+    if args.lease_seconds < 1:
+        parser.error("--lease-seconds must be positive")
+    if args.openhands_timeout_seconds < 0:
+        parser.error("--openhands-timeout-seconds must be zero or positive")
 
     queue = build_queue(args.db)
     kill_file = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
@@ -202,7 +213,13 @@ def main() -> int:
                 if not os.environ.get("OPENHANDS_AGENT_SERVER_URL") or not os.environ.get("OPENHANDS_SESSION_API_KEY"):
                     queue.finish(job["job_id"], False, "openhands_not_configured")
                     continue
-                rc = run(["bash", str(ROOT / "worker/openhands-run.sh")], env=env, timeout=args.lease_seconds, should_stop=should_stop)
+                openhands_timeout = args.openhands_timeout_seconds or None
+                rc = run(
+                    ["bash", str(ROOT / "worker/openhands-run.sh")],
+                    env=env,
+                    timeout=openhands_timeout,
+                    should_stop=should_stop,
+                )
                 if rc != 0:
                     latest = queue.get(job["job_id"])
                     if (latest and latest["status"] == "cancel_requested") or kill_file.exists():
