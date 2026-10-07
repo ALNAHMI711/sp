@@ -138,3 +138,25 @@ def test_github_webhook_rejects_unapproved_repo_and_deduplicates(tmp_path: Path,
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json()["status"] == "duplicate"
+
+
+def test_workers_endpoint_reads_sqlite_registry(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    registry = api.WorkerRegistry(tmp_path / "workers.sqlite3")
+    registry.heartbeat("worker-api", "node-api", "0.1.0")
+
+    response = client.get("/workers", headers=login_headers(client))
+    assert response.status_code == 200
+    assert response.json()["workers"] == [registry.get("worker-api")]
+
+
+def test_workers_endpoint_requires_authentication(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    assert client.get("/workers").status_code == 401
+
+
+def test_workers_endpoint_rejects_postgres_without_dsn(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(api, "QUEUE_BACKEND", "postgres")
+    monkeypatch.setattr(api, "POSTGRES_DSN", "")
+    assert client.get("/workers", headers=login_headers(client)).status_code == 503
