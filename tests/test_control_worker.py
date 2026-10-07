@@ -27,3 +27,18 @@ def test_run_interrupts_child_process_group() -> None:
 
     assert rc == 125
     assert time.monotonic() - started < 5
+
+
+def test_request_cancellation_ignores_missing_job(tmp_path) -> None:
+    from control_worker import request_cancellation
+
+    class Queue:
+        def get(self, job_id):
+            return None
+
+        def cancel(self, job_id):
+            raise AssertionError("missing job must not be cancelled")
+
+    kill_file = tmp_path / "KILL_SWITCH"
+    kill_file.write_text("enabled\n")
+    request_cancellation(Queue(), "missing", kill_file)
