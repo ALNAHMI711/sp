@@ -75,6 +75,11 @@ class PostgresQueue:
         """Connection-per-operation adapter; kept for backend interface symmetry."""
         return None
 
+    def ping(self) -> bool:
+        with self._connect() as db:
+            db.execute("SELECT 1").fetchone()
+        return True
+
     def enqueue(self, target_repo: str, task: str, mode: str,
                 idempotency_key: str | None = None,
                 max_attempts: int = 3) -> str:
