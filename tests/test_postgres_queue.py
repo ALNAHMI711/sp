@@ -100,3 +100,25 @@ def test_postgres_expired_worker_cannot_finish_after_recovery(queue):
     assert queue.finish(job_id, True) is True
     assert queue.finish(job_id, False, "stale-worker") is False
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+
+
+def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
+    job_id = queue.enqueue(
+        "ALNAHMI711/sp", "run tests", "read_only", "pg-recovery-cancel"
+    )
+    assert queue.approve(job_id)
+    assert queue.claim("worker-a", lease_seconds=1)
+    with queue._connect() as db:
+        db.execute(
+            "UPDATE jobs SET lease_until=NOW() - INTERVAL '1 second' WHERE job_id=%s",
+            (job_id,),
+        )
+    assert queue.recover_expired() == 1
+    reclaimed = queue.claim("worker-b", lease_seconds=60)
+    assert reclaimed and reclaimed["job_id"] == job_id
+    assert queue.cancel(job_id) == "cancel_requested"
+    assert queue.finish(job_id, True) is False
+    assert queue.mark_cancelled(job_id, "recovered_job_cancelled") is True
+    assert queue.finish(job_id, False, "stale-worker") is False
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+    assert queue.get(job_id)["status"] == "cancelled"
