@@ -157,6 +157,7 @@ def test_expired_worker_cannot_finish_after_recovery(tmp_path: Path) -> None:
     assert queue.claim("worker-2", lease_seconds=60)
     assert queue.finish(job_id, True) is True
     assert queue.finish(job_id, False, "stale-worker") is False
+    assert queue.renew_lease(job_id, "worker-1", lease_seconds=60) is False
 
 def test_renew_lease_keeps_active_job_owned(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
