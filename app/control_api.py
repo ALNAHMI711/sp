@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from worker.control_queue import ControlQueue
 from worker.postgres_queue import PostgresQueue
+from worker.repo_policy import approved_repositories
 from app.auth import audit, current_user, login, require_scope
 
 app = FastAPI(title="Autonomous Control API", version="0.1.0")
@@ -33,7 +34,7 @@ def queue():
     raise RuntimeError("unsupported CONTROL_QUEUE_BACKEND")
 KILL_SWITCH = Path(os.getenv("CONTROL_KILL_SWITCH_FILE", ".data/KILL_SWITCH"))
 GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
-CONTROL_ALLOWED_REPOS = {item.strip() for item in os.getenv("CONTROL_ALLOWED_REPOS", "ALNAHMI711/sp").split(",") if item.strip()}
+CONTROL_ALLOWED_REPOS = approved_repositories()
 
 
 class LoginRequest(BaseModel):
