@@ -205,7 +205,7 @@ def main() -> int:
                 continue
             policy_rc = run(["bash", str(ROOT / "worker/policy.sh")], env=env, should_stop=should_stop)
             if lease_loss_requested():
-                queue.finish(job["job_id"], False, "worker_lease_lost")
+                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
                 continue
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
@@ -213,12 +213,12 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_policy")
                 continue
             if policy_rc != 0:
-                queue.finish(job["job_id"], False, "policy_blocked")
+                queue.finish(job["job_id"], False, "policy_blocked", args.worker_id)
                 continue
 
             inspect_rc = run(["bash", str(ROOT / "worker/inspect.sh")], env=env, should_stop=should_stop)
             if lease_loss_requested():
-                queue.finish(job["job_id"], False, "worker_lease_lost")
+                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
                 continue
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
@@ -226,7 +226,7 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_inspection")
                 continue
             if inspect_rc != 0:
-                queue.finish(job["job_id"], False, "inspection_failed")
+                queue.finish(job["job_id"], False, "inspection_failed", args.worker_id)
                 continue
 
             if cancellation_requested(queue, job["job_id"], kill_file):
@@ -237,7 +237,7 @@ def main() -> int:
 
             if job["mode"] == "propose_changes":
                 if not os.environ.get("OPENHANDS_AGENT_SERVER_URL") or not os.environ.get("OPENHANDS_SESSION_API_KEY"):
-                    queue.finish(job["job_id"], False, "openhands_not_configured")
+                    queue.finish(job["job_id"], False, "openhands_not_configured", args.worker_id)
                     continue
                 openhands_timeout = args.openhands_timeout_seconds or None
                 rc = run(
@@ -247,14 +247,14 @@ def main() -> int:
                     should_stop=should_stop,
                 )
                 if lease_loss_requested():
-                    queue.finish(job["job_id"], False, "worker_lease_lost")
+                    queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
                     continue
                 if rc != 0:
                     latest = queue.get(job["job_id"])
                     if (latest and latest["status"] == "cancel_requested") or kill_file.exists():
                         queue.mark_cancelled(job["job_id"], "cancelled_during_openhands")
                     else:
-                        queue.finish(job["job_id"], False, f"openhands_failed:{rc}")
+                        queue.finish(job["job_id"], False, f"openhands_failed:{rc}", args.worker_id)
                     continue
 
             if cancellation_requested(queue, job["job_id"], kill_file):
@@ -265,7 +265,7 @@ def main() -> int:
 
             test_rc = run(["bash", str(ROOT / "worker/test.sh"), str(repo_dir)], env=env, should_stop=should_stop)
             if lease_loss_requested():
-                queue.finish(job["job_id"], False, "worker_lease_lost")
+                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
                 continue
             if cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
@@ -273,7 +273,7 @@ def main() -> int:
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_tests")
                 continue
             if test_rc != 0:
-                queue.finish(job["job_id"], False, "tests_failed")
+                queue.finish(job["job_id"], False, "tests_failed", args.worker_id)
                 continue
 
             if cancellation_requested(queue, job["job_id"], kill_file):
@@ -285,10 +285,10 @@ def main() -> int:
             completion_env = env | {"OPENHANDS_STATUS": "finished" if job["mode"] == "propose_changes" else "not_requested"}
             completion_rc = run(["bash", str(ROOT / "worker/completion.sh"), str(repo_dir)], env=completion_env, should_stop=should_stop)
             if lease_loss_requested():
-                queue.finish(job["job_id"], False, "worker_lease_lost")
+                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
                 continue
             if completion_rc != 0:
-                queue.finish(job["job_id"], False, "completion_gate_failed")
+                queue.finish(job["job_id"], False, "completion_gate_failed", args.worker_id)
                 continue
 
             if cancellation_requested(queue, job["job_id"], kill_file):
@@ -298,23 +298,23 @@ def main() -> int:
                 continue
 
             if lease_lost.is_set():
-                queue.finish(job["job_id"], False, "worker_lease_lost")
+                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
                 continue
-            queue.finish(job["job_id"], True)
+            queue.finish(job["job_id"], True, worker_id=args.worker_id)
         except subprocess.TimeoutExpired:
             if lease_lost.is_set():
-                queue.finish(job["job_id"], False, "worker_lease_lost")
+                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
             elif cancellation_requested(queue, job["job_id"], kill_file):
                 if kill_file.exists():
                     queue.cancel(job["job_id"])
                 cancel_and_continue(queue, job["job_id"], "cancelled_after_timeout")
             else:
-                queue.finish(job["job_id"], False, "worker_timeout")
+                queue.finish(job["job_id"], False, "worker_timeout", args.worker_id)
         except Exception as exc:
             if lease_lost.is_set():
-                queue.finish(job["job_id"], False, "worker_lease_lost")
+                queue.finish(job["job_id"], False, "worker_lease_lost", args.worker_id)
             else:
-                queue.finish(job["job_id"], False, f"worker_exception:{type(exc).__name__}")
+                queue.finish(job["job_id"], False, f"worker_exception:{type(exc).__name__}", args.worker_id)
         finally:
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=2)
