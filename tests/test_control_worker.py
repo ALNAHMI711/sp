@@ -48,7 +48,7 @@ def test_lease_heartbeat_detects_lost_lease() -> None:
     from control_worker import start_lease_heartbeat
 
     class Queue:
-        def renew_lease(self, job_id, worker_id, lease_seconds):
+        def renew_lease(self, job_id, worker_id, lease_seconds, lease_token):
             return False
 
     stop, thread, lost = start_lease_heartbeat(Queue(), "job-1", "worker-1", 1)
@@ -140,3 +140,23 @@ def test_reaper_runs_one_recovery_cycle(monkeypatch) -> None:
         sys.argv = old_argv
 
     assert calls == [True]
+
+
+def test_lease_heartbeat_passes_lease_token() -> None:
+    from control_worker import start_lease_heartbeat
+
+    calls = []
+
+    class Queue:
+        def renew_lease(self, job_id, worker_id, lease_seconds, lease_token):
+            calls.append((job_id, worker_id, lease_seconds, lease_token))
+            return False
+
+    stop, thread, lost = start_lease_heartbeat(Queue(), "job-2", "worker-2", 1, "token-2")
+    try:
+        assert lost.wait(timeout=2)
+        assert calls == [("job-2", "worker-2", 1, "token-2")]
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
