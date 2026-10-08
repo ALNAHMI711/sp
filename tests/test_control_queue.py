@@ -156,7 +156,7 @@ def test_expired_worker_cannot_finish_after_recovery(tmp_path: Path) -> None:
     assert queue.recover_expired() == 1
     assert queue.claim("worker-2", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
-    assert queue.finish(job_id, True) is False
+    assert queue.finish(job_id, True, worker_id="worker-b", lease_token="stale") is False
     assert queue.mark_cancelled(job_id, "recovered_job_cancelled") is True
     assert queue.finish(job_id, False, "stale-worker", worker_id="worker-1", lease_token="stale") is False
     assert queue.renew_lease(job_id, "worker-1", lease_seconds=60) is False
@@ -201,7 +201,7 @@ def test_recovered_worker_cannot_finish_after_new_worker_cancels(tmp_path: Path)
     assert queue.recover_expired() == 1
     assert queue.claim("worker-b", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
-    assert queue.finish(job_id, True) is False
+    assert queue.finish(job_id, True, worker_id="worker-b", lease_token="stale") is False
     assert queue.mark_cancelled(job_id, "worker-b_cancelled") is True
     assert queue.finish(job_id, True) is False
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
