@@ -62,6 +62,31 @@ services:
       retries: 3
       start_period: 10s
 
+  reaper:
+    build:
+      context: ..
+      dockerfile: deploy/worker.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./worker.env
+    environment:
+      CONTROL_QUEUE_DB: /app/data/control-queue.sqlite3
+      CONTROL_QUEUE_BACKEND: ${CONTROL_QUEUE_BACKEND:-sqlite}
+      CONTROL_POSTGRES_DSN: ${CONTROL_POSTGRES_DSN:-}
+      CONTROL_REAPER_INTERVAL_SECONDS: ${CONTROL_REAPER_INTERVAL_SECONDS:-15}
+    volumes:
+      - control-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   worker:
     build:
       context: ..
