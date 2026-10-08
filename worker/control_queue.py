@@ -156,14 +156,16 @@ class ControlQueue:
         return recovered
 
     def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900, lease_token: str | None = None) -> bool:
+        if not worker_id or not lease_token:
+            raise ValueError("worker_id and lease_token are required to renew a lease")
         if lease_seconds < 1:
             raise ValueError("lease_seconds must be positive")
         lease = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
         with self._db() as db:
             changed = db.execute(
                 """UPDATE jobs SET lease_until=?, updated_at=?
-                   WHERE job_id=? AND worker_id=? AND status='running' AND (? IS NULL OR lease_token=?)""",
-                (lease, now(), job_id, worker_id, lease_token, lease_token),
+                   WHERE job_id=? AND worker_id=? AND status='running' AND lease_token=?""",
+                (lease, now(), job_id, worker_id, lease_token),
             )
             return changed.rowcount == 1
 
