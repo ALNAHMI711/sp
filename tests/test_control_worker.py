@@ -116,3 +116,27 @@ def test_lease_heartbeat_treats_backend_error_as_lease_loss() -> None:
         stop.set()
         thread.join(timeout=2)
         assert not thread.is_alive()
+
+
+def test_reaper_runs_one_recovery_cycle(monkeypatch) -> None:
+    import reaper
+
+    calls = []
+
+    class Queue:
+        def recover_expired(self):
+            calls.append(True)
+            return 2
+
+    monkeypatch.setattr(reaper, "build_queue", lambda db: Queue())
+    monkeypatch.setattr(reaper, "time", type("Clock", (), {"sleep": staticmethod(lambda _: None)}))
+    monkeypatch.setattr(reaper, "argparse", reaper.argparse)
+
+    old_argv = sys.argv
+    try:
+        sys.argv = ["reaper.py", "--once"]
+        assert reaper.main() == 0
+    finally:
+        sys.argv = old_argv
+
+    assert calls == [True]
