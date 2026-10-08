@@ -74,6 +74,7 @@ services:
       CONTROL_QUEUE_BACKEND: ${CONTROL_QUEUE_BACKEND:-sqlite}
       CONTROL_POSTGRES_DSN: ${CONTROL_POSTGRES_DSN:-}
       CONTROL_REAPER_INTERVAL_SECONDS: ${CONTROL_REAPER_INTERVAL_SECONDS:-15}
+    command: ["python", "/app/worker/reaper.py", "--db", "/app/data/control-queue.sqlite3"]
     volumes:
       - control-data:/app/data
     read_only: true
