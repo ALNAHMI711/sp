@@ -3,7 +3,7 @@ services:
     name: unified-dev-hub
     runtime: docker
     dockerfilePath: ./unified-dev-hub/Dockerfile
-    dockerContext: .
+    dockerContext: ./unified-dev-hub
     plan: starter
     healthCheckPath: /health
     envVars:
