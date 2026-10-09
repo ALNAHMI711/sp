@@ -130,7 +130,21 @@ def auth_login(payload: LoginRequest) -> dict:
 @app.get("/settings/integrations")
 def get_integration_settings(user: dict = Depends(current_user)) -> dict:
     require_scope(user, "secrets:read")
-    return {"configured": secret_status(), "storage": "encrypted-control-panel"}
+    return {
+        "configured": secret_status(),
+        "storage": "encrypted-control-panel",
+        "catalog": [
+            {"name": "GITHUB_WEBHOOK_SECRET", "label": "GitHub Webhook Secret", "required": False, "purpose": "التحقق من توقيع Webhook؛ مطلوب فقط عند تفعيل استقبال أحداث GitHub."},
+            {"name": "GITHUB_APP_ID", "label": "GitHub App ID", "required": False, "purpose": "معرّف تطبيق GitHub؛ لا يكفي وحده لتفعيل اتصال التطبيق."},
+            {"name": "GITHUB_APP_INSTALLATION_ID", "label": "GitHub App Installation ID", "required": False, "purpose": "معرّف تثبيت GitHub App؛ يستخدم عند استكمال تكامل التطبيق."},
+            {"name": "GITHUB_APP_PRIVATE_KEY", "label": "GitHub App Private Key", "required": False, "purpose": "المفتاح الخاص لتوقيع JWT الخاص بالتطبيق؛ لا ترفعه إلى GitHub."},
+            {"name": "TELEGRAM_BOT_TOKEN", "label": "Telegram Bot Token", "required": False, "purpose": "يلزم فقط عند تفعيل بوت Telegram."},
+            {"name": "TELEGRAM_ALLOWED_USER_IDS", "label": "Telegram Allowed User IDs", "required": False, "purpose": "قائمة معرّفات المستخدمين المصرّح لهم بالتحكم عبر Telegram."},
+            {"name": "OPENAI_API_KEY", "label": "OpenAI API Key", "required": False, "purpose": "يلزم فقط عند تفعيل ميزات OpenAI؛ لا تُفعّل الميزة بمجرد حفظ المفتاح."},
+            {"name": "AI_API_KEY", "label": "AI API Key (عام)", "required": False, "purpose": "مفتاح مزوّد ذكاء اصطناعي آخر عند إضافة موصل يدعمه."},
+        ],
+        "deployment_note": "مفاتيح التشفير والمصادقة والاتصال بقاعدة البيانات تظل إعدادات نشر آمنة؛ لا تُحفظ داخل إعدادات التكامل.",
+    }
 
 
 @app.put("/settings/integrations")
