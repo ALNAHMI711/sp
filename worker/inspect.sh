@@ -39,9 +39,9 @@ cd "$WORKDIR/repo"
   echo "- Task: $TASK"
   echo
   echo "## Repository shape"
-  printf '%s\\n' "```"
+  printf '%s\n' "```"
   find . -maxdepth 2 -type f ! -path './.git/*' | sort | head -200
-  printf '%s\\n' "```"
+  printf '%s\n' "```"
   echo
   echo "## Detected project files"
   for f in pyproject.toml requirements.txt package.json Dockerfile docker-compose.yml compose.yml; do
