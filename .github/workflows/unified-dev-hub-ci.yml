@@ -24,3 +24,12 @@ jobs:
           cache-dependency-path: unified-dev-hub/requirements.txt
       - run: pip install -r requirements.txt
       - run: pytest -q
+      - name: Package application
+        run: zip -r unified-dev-hub.zip . -x ".env" "tests/*.db" "*.pyc" "*/__pycache__/*" ".pytest_cache/*" "unified-dev-hub.zip"
+      - name: Upload downloadable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-dev-hub
+          path: unified-dev-hub/unified-dev-hub.zip
+          if-no-files-found: error
+          retention-days: 14
