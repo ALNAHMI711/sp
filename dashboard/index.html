@@ -41,10 +41,13 @@ textarea{min-height:120px;resize:vertical}button{cursor:pointer;font-weight:700}
 <div class="grid">
 <div><label>GitHub Webhook Secret</label><input id="secret_GITHUB_WEBHOOK_SECRET" type="password" autocomplete="new-password" placeholder="اتركه فارغًا للإبقاء على القيمة الحالية"></div>
 <div><label>GitHub App ID</label><input id="secret_GITHUB_APP_ID" type="password" autocomplete="new-password" placeholder="GitHub App ID"></div>
+<div><label>GitHub App Installation ID</label><input id="secret_GITHUB_APP_INSTALLATION_ID" type="password" autocomplete="new-password" placeholder="Installation ID"></div>
 <div><label>GitHub App Private Key (PEM)</label><textarea id="secret_GITHUB_APP_PRIVATE_KEY" autocomplete="off" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></div>
 <div><label>Telegram Bot Token</label><input id="secret_TELEGRAM_BOT_TOKEN" type="password" autocomplete="new-password" placeholder="توكن البوت"></div>
 <div><label>Telegram Allowed User IDs</label><input id="secret_TELEGRAM_ALLOWED_USER_IDS" type="password" autocomplete="off" placeholder="معرّفات المستخدمين المسموح لهم"></div>
-<div><label>AI API Key (اختياري)</label><input id="secret_AI_API_KEY" type="password" autocomplete="new-password" placeholder="مفتاح مزود الذكاء الاصطناعي"></div>
+<div><label>OpenAI API Key (اختياري)</label><input id="secret_OPENAI_API_KEY" type="password" autocomplete="new-password" placeholder="مفتاح OpenAI"></div>
+<div><label>AI API Key (عام، اختياري)</label><input id="secret_AI_API_KEY" type="password" autocomplete="new-password" placeholder="مفتاح مزوّد آخر مدعوم"></div>
+<p>المفاتيح اختيارية بحسب الميزات التي ستفعّلها. الحفظ لا يعني أن الموصل يعمل؛ لا تدخل كلمات مرور النشر أو مفتاح تشفير قاعدة البيانات هنا.</p>
 </div>
 <button onclick="saveIntegrationSettings()">حفظ المفاتيح المشفّرة</button>
 <label>مفتاح لحذفه</label>
@@ -129,18 +132,23 @@ async function refreshHealth(){
    $("health").textContent="غير متاح";
  }
 }
-const secretFields=["GITHUB_WEBHOOK_SECRET","GITHUB_APP_ID","GITHUB_APP_PRIVATE_KEY","TELEGRAM_BOT_TOKEN","TELEGRAM_ALLOWED_USER_IDS","AI_API_KEY"];
+const secretFields=["GITHUB_WEBHOOK_SECRET","GITHUB_APP_ID","GITHUB_APP_INSTALLATION_ID","GITHUB_APP_PRIVATE_KEY","TELEGRAM_BOT_TOKEN","TELEGRAM_ALLOWED_USER_IDS","OPENAI_API_KEY","AI_API_KEY"];
 const secretLabels={
  GITHUB_WEBHOOK_SECRET:"GitHub Webhook Secret",GITHUB_APP_ID:"GitHub App ID",
- GITHUB_APP_PRIVATE_KEY:"GitHub App Private Key",TELEGRAM_BOT_TOKEN:"Telegram Bot Token",
- TELEGRAM_ALLOWED_USER_IDS:"Telegram Allowed User IDs",AI_API_KEY:"AI API Key"
+ GITHUB_APP_INSTALLATION_ID:"GitHub App Installation ID",GITHUB_APP_PRIVATE_KEY:"GitHub App Private Key",TELEGRAM_BOT_TOKEN:"Telegram Bot Token",
+ TELEGRAM_ALLOWED_USER_IDS:"Telegram Allowed User IDs",OPENAI_API_KEY:"OpenAI API Key",AI_API_KEY:"AI API Key"
 };
 async function loadIntegrationSettings(){
  try{
   const r=await api("/api/settings/integrations");
   const d=await r.json();
   if(!r.ok){$("integrationStatus").textContent="تعذر قراءة حالة المفاتيح";return;}
-  $("integrationStatus").textContent=Object.entries(d.configured||{}).map(([k,v])=>(v?"✓ ":"○ ")+(secretLabels[k]||k)+(v?" — مضبوط":" — غير مضبوط")).join("\n");
+  const catalog=d.catalog||[];
+  $("integrationStatus").textContent=catalog.map(item=>{
+    const configured=Boolean((d.configured||{})[item.name]);
+    return (configured?"✓ ":"○ ")+item.label+" — "+(configured?"مضبوط":"غير مضبوط")+
+      " ["+(item.required?"مطلوب":"اختياري")+"]\n  "+item.purpose;
+  }).join("\n\n")+(d.deployment_note?"\n\nملاحظة: "+d.deployment_note:"");
  }catch(e){$("integrationStatus").textContent="تعذر الاتصال بإعدادات التكامل";}
 }
 async function saveIntegrationSettings(){
