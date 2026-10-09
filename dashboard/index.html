@@ -106,6 +106,7 @@ async function login(){
   $("loginResult").textContent="";
   setLoggedIn(true);
   refreshHealth();
+  loadIntegrationSettings();
 }
 function logout(){
   token="";
@@ -139,7 +140,7 @@ async function loadIntegrationSettings(){
   const r=await api("/api/settings/integrations");
   const d=await r.json();
   if(!r.ok){$("integrationStatus").textContent="تعذر قراءة حالة المفاتيح";return;}
-  $("integrationStatus").textContent=Object.entries(d.configured||{}).map(([k,v])=>(v?"✓ ":"○ ")+(secretLabels[k]||k)+(v?" — مضبوط":" — غير مضبوط")).join("\\n");
+  $("integrationStatus").textContent=Object.entries(d.configured||{}).map(([k,v])=>(v?"✓ ":"○ ")+(secretLabels[k]||k)+(v?" — مضبوط":" — غير مضبوط")).join("\n");
  }catch(e){$("integrationStatus").textContent="تعذر الاتصال بإعدادات التكامل";}
 }
 async function saveIntegrationSettings(){
