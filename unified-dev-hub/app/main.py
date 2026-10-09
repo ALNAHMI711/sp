@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterator
 from urllib.parse import urlsplit
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
@@ -31,7 +32,6 @@ app = FastAPI(title="مركز التطوير الموحد", version="1.0.0")
 serializer = URLSafeTimedSerializer(SECRET_KEY or secrets.token_urlsafe(48), salt="udh-session")
 STATIC_DIR = BASE_DIR / "app" / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
 STAGES = {"idea", "planning", "building", "testing", "preview", "deployed", "paused"}
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -40,7 +40,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             origin = request.headers.get("origin")
             if origin:
                 parsed = urlsplit(origin)
-                if parsed.scheme != request.url.scheme or parsed.netloc != request.url.netloc:
+                host = request.headers.get("host", "")
+                expected_scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+                if parsed.netloc != host or parsed.scheme not in {"http", "https"} or parsed.scheme != expected_scheme:
                     return Response("Origin not allowed", status_code=403)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -100,13 +102,9 @@ def startup() -> None:
     init_db()
 
 def is_configured() -> bool:
-    return bool(
-        ADMIN_USERNAME
-        and ADMIN_PASSWORD
-        and len(SECRET_KEY) >= 32
-        and not ADMIN_PASSWORD.startswith("CHANGE_ME")
-        and not SECRET_KEY.startswith("CHANGE_ME")
-    )
+    return bool(ADMIN_USERNAME and ADMIN_PASSWORD and len(SECRET_KEY) >= 32
+                and not ADMIN_PASSWORD.startswith("CHANGE_ME")
+                and not SECRET_KEY.startswith("CHANGE_ME"))
 
 def current_user(request: Request) -> str:
     token = request.cookies.get(COOKIE_NAME)
@@ -169,10 +167,8 @@ def login(response: Response, username: str = Form(...), password: str = Form(..
     if not secrets.compare_digest(username, ADMIN_USERNAME) or not secrets.compare_digest(password, ADMIN_PASSWORD):
         raise HTTPException(status_code=401, detail="اسم المستخدم أو كلمة المرور غير صحيحة")
     token = serializer.dumps({"username": ADMIN_USERNAME, "issued_at": utcnow()})
-    response.set_cookie(
-        COOKIE_NAME, token, httponly=True, secure=COOKIE_SECURE,
-        samesite="lax", max_age=SESSION_MAX_AGE, path="/"
-    )
+    response.set_cookie(COOKIE_NAME, token, httponly=True, secure=COOKIE_SECURE,
+                        samesite="lax", max_age=SESSION_MAX_AGE, path="/")
     return {"ok": True}
 
 @app.post("/api/logout")
@@ -193,13 +189,10 @@ def create_project(payload: ProjectIn, _: str = Depends(current_user)) -> dict:
     with db() as conn:
         cur = conn.execute(
             "INSERT INTO projects(name, description, repo_url, stack, stage, created_at, updated_at) VALUES(?,?,?,?,?,?,?)",
-            (payload.name.strip(), payload.description.strip(), payload.repo_url.strip(), payload.stack.strip(), stage, now, now),
-        )
+            (payload.name.strip(), payload.description.strip(), payload.repo_url.strip(), payload.stack.strip(), stage, now, now))
         project_id = cur.lastrowid
-        conn.execute(
-            "INSERT INTO audit_events(action, project_id, details, created_at) VALUES(?,?,?,?)",
-            ("project_created", project_id, payload.name.strip(), now),
-        )
+        conn.execute("INSERT INTO audit_events(action, project_id, details, created_at) VALUES(?,?,?,?)",
+                     ("project_created", project_id, payload.name.strip(), now))
         row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
     return dict(row)
 
@@ -209,16 +202,12 @@ def update_stage(project_id: int, payload: StageIn, _: str = Depends(current_use
         raise HTTPException(status_code=422, detail="مرحلة غير معروفة")
     now = utcnow()
     with db() as conn:
-        cur = conn.execute(
-            "UPDATE projects SET stage=?, updated_at=? WHERE id=?",
-            (payload.stage, now, project_id),
-        )
+        cur = conn.execute("UPDATE projects SET stage=?, updated_at=? WHERE id=?",
+                           (payload.stage, now, project_id))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="المشروع غير موجود")
-        conn.execute(
-            "INSERT INTO audit_events(action, project_id, details, created_at) VALUES(?,?,?,?)",
-            ("stage_updated", project_id, payload.stage, now),
-        )
+        conn.execute("INSERT INTO audit_events(action, project_id, details, created_at) VALUES(?,?,?,?)",
+                     ("stage_updated", project_id, payload.stage, now))
         row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
     return dict(row)
 
@@ -229,10 +218,8 @@ def delete_project(project_id: int, _: str = Depends(current_user)) -> Response:
         cur = conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="المشروع غير موجود")
-        conn.execute(
-            "INSERT INTO audit_events(action, project_id, details, created_at) VALUES(?,?,?,?)",
-            ("project_deleted", None, str(project_id), now),
-        )
+        conn.execute("INSERT INTO audit_events(action, project_id, details, created_at) VALUES(?,?,?,?)",
+                     ("project_deleted", None, str(project_id), now))
     return Response(status_code=204)
 
 @app.get("/api/audit")
@@ -240,3 +227,29 @@ def audit_events(_: str = Depends(current_user)) -> list[dict]:
     with db() as conn:
         rows = conn.execute("SELECT * FROM audit_events ORDER BY id DESC LIMIT 200").fetchall()
     return [dict(row) for row in rows]
+
+@app.get("/api/integrations")
+async def integrations(_: str = Depends(current_user)) -> dict:
+    results = []
+    providers = [
+        ("GitHub", os.getenv("GITHUB_READ_TOKEN", ""), "https://api.github.com/user"),
+        ("Vercel", os.getenv("VERCEL_READ_TOKEN", ""), "https://api.vercel.com/v2/user"),
+    ]
+    async with httpx.AsyncClient(timeout=6.0, follow_redirects=False) as client:
+        for name, token, endpoint in providers:
+            if not token:
+                results.append({"provider": name, "configured": False, "connected": False, "status": "missing_token"})
+                continue
+            try:
+                response = await client.get(endpoint, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
+                if response.status_code == 200:
+                    results.append({"provider": name, "configured": True, "connected": True, "status": "connected"})
+                elif response.status_code in {401, 403}:
+                    results.append({"provider": name, "configured": True, "connected": False, "status": "invalid_or_insufficient_token"})
+                else:
+                    results.append({"provider": name, "configured": True, "connected": False, "status": f"provider_http_{response.status_code}"})
+            except httpx.TimeoutException:
+                results.append({"provider": name, "configured": True, "connected": False, "status": "timeout"})
+            except httpx.HTTPError:
+                results.append({"provider": name, "configured": True, "connected": False, "status": "connection_error"})
+    return {"integrations": results, "mode": "read_only"}
