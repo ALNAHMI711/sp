@@ -139,6 +139,29 @@ class ProjectIn(BaseModel):
 class StageIn(BaseModel):
     stage: str
 
+def require_token(env_name: str, label: str) -> str:
+    token = os.getenv(env_name, "").strip()
+    if not token:
+        raise HTTPException(status_code=503, detail=f"لم يتم ضبط رمز {label} على الخادم")
+    return token
+
+async def provider_get(url: str, token: str, params: dict | None = None) -> httpx.Response:
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
+            response = await client.get(url, params=params, headers={
+                "Authorization": f"Bearer {token}", "Accept": "application/json",
+                "User-Agent": "Unified-Development-Hub/1.0"
+            })
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="انتهت مهلة الاتصال بمزود الخدمة")
+    except httpx.HTTPError:
+        raise HTTPException(status_code=502, detail="تعذر الاتصال بمزود الخدمة")
+    if response.status_code in {401, 403}:
+        raise HTTPException(status_code=502, detail="رمز الوصول غير صالح أو صلاحياته غير كافية")
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"أعاد مزود الخدمة الحالة {response.status_code}")
+    return response
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -253,3 +276,31 @@ async def integrations(_: str = Depends(current_user)) -> dict:
             except httpx.HTTPError:
                 results.append({"provider": name, "configured": True, "connected": False, "status": "connection_error"})
     return {"integrations": results, "mode": "read_only"}
+
+@app.get("/api/github/repos")
+async def github_repositories(_: str = Depends(current_user)) -> dict:
+    token = require_token("GITHUB_READ_TOKEN", "GitHub")
+    response = await provider_get("https://api.github.com/user/repos", token,
+                                  {"sort": "updated", "per_page": "25", "affiliation": "owner,collaborator,organization_member"})
+    try:
+        payload = response.json()
+        items = [{"name": x.get("name"), "full_name": x.get("full_name"),
+                  "html_url": x.get("html_url"), "private": x.get("private"),
+                  "default_branch": x.get("default_branch"), "updated_at": x.get("updated_at")}
+                 for x in payload if isinstance(x, dict)]
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=502, detail="استجابة GitHub غير مفهومة")
+    return {"repositories": items, "read_only": True}
+
+@app.get("/api/vercel/projects")
+async def vercel_projects(_: str = Depends(current_user)) -> dict:
+    token = require_token("VERCEL_READ_TOKEN", "Vercel")
+    response = await provider_get("https://api.vercel.com/v9/projects", token, {"limit": "25"})
+    try:
+        payload = response.json()
+        items = [{"id": x.get("id"), "name": x.get("name"), "framework": x.get("framework"),
+                  "updatedAt": x.get("updatedAt"), "link": f"https://vercel.com/{x.get('name')}"}
+                 for x in payload.get("projects", []) if isinstance(x, dict)]
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=502, detail="استجابة Vercel غير مفهومة")
+    return {"projects": items, "read_only": True}
