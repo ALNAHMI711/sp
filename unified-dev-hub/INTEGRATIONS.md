@@ -2,14 +2,19 @@
 
 Open `/static/integrations.html` while the application is running and signed in.
 
-## GitHub (read-only status)
-Set `GITHUB_READ_TOKEN` on the server to a fine-grained token with only the minimum account-read permission needed for `GET /user`. This endpoint only validates token identity; repository inspection and write operations are not implemented by this starter.
+## GitHub (read-only)
+Set `GITHUB_READ_TOKEN` on the server to a fine-grained token with only the minimum permissions required for account identity and repository metadata.
+- `GET /api/integrations`: validates token identity.
+- `GET /api/github/repos`: returns up to 25 accessible repositories with names, visibility, default branch, URL, and update timestamp.
 
-## Vercel (read-only status)
-Set `VERCEL_READ_TOKEN` on the server with minimum user-read scope needed for `GET /v2/user`. This endpoint only validates token identity; project deployment operations are not implemented by this starter.
+## Vercel (read-only)
+Set `VERCEL_READ_TOKEN` on the server with minimum user/project-read scope.
+- `GET /api/integrations`: validates token identity.
+- `GET /api/vercel/projects`: returns up to 25 projects with name, framework, and update timestamp.
 
 ## Important
 - Never add real tokens to GitHub files, browser storage, frontend code, or issue comments.
-- The integration health endpoint returns status only, not token values or provider response bodies.
+- Tokens remain on the server; API responses do not include token values or raw provider response bodies.
 - Missing credentials are reported as `missing_token`; invalid/insufficient credentials are reported separately.
-- A connected status does not mean the platform can build, deploy, or modify a project.
+- Provider browsing is read-only. It does not trigger workflow runs, edit repositories, build apps, or deploy to Vercel.
+- A connected status does not mean all platform operations are available.
