@@ -174,3 +174,49 @@ def test_workers_endpoint_rejects_postgres_without_dsn(tmp_path: Path, monkeypat
     monkeypatch.setattr(api, "QUEUE_BACKEND", "postgres")
     monkeypatch.setattr(api, "POSTGRES_DSN", "")
     assert client.get("/workers", headers=login_headers(client)).status_code == 503
+
+
+def test_integration_secrets_are_encrypted_and_never_returned(tmp_path: Path, monkeypatch) -> None:
+    import sqlite3
+
+    client = configured_client(tmp_path, monkeypatch)
+    headers = login_headers(client)
+    secret_value = "github-webhook-secret-test-only"
+
+    saved = client.put(
+        "/settings/integrations",
+        headers=headers,
+        json={"secrets": {"GITHUB_WEBHOOK_SECRET": secret_value, "TELEGRAM_BOT_TOKEN": "telegram-test-token"}},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["configured"]["GITHUB_WEBHOOK_SECRET"] is True
+    assert secret_value not in saved.text
+    assert "telegram-test-token" not in saved.text
+
+    status = client.get("/settings/integrations", headers=headers)
+    assert status.status_code == 200
+    assert status.json()["configured"]["GITHUB_WEBHOOK_SECRET"] is True
+    assert secret_value not in status.text
+
+    db_path = tmp_path / "control.sqlite3"
+    with sqlite3.connect(db_path) as db:
+        row = db.execute(
+            "SELECT encrypted_value FROM integration_secrets WHERE name='GITHUB_WEBHOOK_SECRET'"
+        ).fetchone()
+    assert row is not None
+    assert secret_value.encode() not in bytes(row[0])
+
+    deleted = client.delete("/settings/integrations/TELEGRAM_BOT_TOKEN", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert deleted.json()["configured"]["TELEGRAM_BOT_TOKEN"] is False
+
+
+def test_integration_secrets_reject_unknown_names(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    response = client.put(
+        "/settings/integrations",
+        headers=login_headers(client),
+        json={"secrets": {"UNSAFE_ARBITRARY_SETTING": "value"}},
+    )
+    assert response.status_code == 400
