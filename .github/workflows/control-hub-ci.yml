@@ -47,7 +47,11 @@ jobs:
           python-version: "3.12"
       - name: Install test dependencies
         run: python -m pip install -r deploy/control-api/requirements.txt
+      - name: Apply PostgreSQL schema migrations
+        env:
+          CONTROL_POSTGRES_DSN: postgresql://controlhub:controlhub@localhost:5432/controlhub_test
+        run: python deploy/migrate_postgres.py
       - name: Run PostgreSQL integration tests
         env:
           CONTROL_POSTGRES_DSN: postgresql://controlhub:controlhub@localhost:5432/controlhub_test
-        run: python -m pytest -q tests/test_postgres_queue.py
+        run: python -m pytest -q tests/test_postgres_queue.py tests/test_postgres_worker_registry.py
