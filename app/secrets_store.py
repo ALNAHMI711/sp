@@ -12,10 +12,12 @@ from app import auth as auth_module
 ALLOWED_SECRETS = {
     "GITHUB_WEBHOOK_SECRET",
     "GITHUB_APP_ID",
+    "GITHUB_APP_INSTALLATION_ID",
     "GITHUB_APP_PRIVATE_KEY",
     "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_ALLOWED_USER_IDS",
     "AI_API_KEY",
+    "OPENAI_API_KEY",
 }
 
 
