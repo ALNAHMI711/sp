@@ -14,7 +14,7 @@ main{max-width:1200px;margin:auto;padding:28px clamp(14px,3vw,36px)}.hero{displa
 @media(max-width:480px){header{padding:14px}.brand h1{font-size:15px}.grid{gap:8px}.card{padding:14px}.stat{font-size:24px}.hide-small{display:none}}
 </style></head>
 <body>
-<header><div class="brand"><div class="logo">م</div><div><h1>مركز التطوير الموحد</h1><p>إدارة المشاريع من الفكرة حتى النشر</p></div></div><div class="actions"><span class="badge">لوحة الإدارة</span><button id="logout" class="secondary hidden">تسجيل الخروج</button></div></header>
+<header><div class="brand"><div class="logo">م</div><div><h1>مركز التطوير الموحد</h1><p>إدارة المشاريع من الفكرة حتى النشر</p></div></div><div class="actions"><a class="badge" style="text-decoration:none" href="/static/integrations.html">التكاملات</a><span class="badge">لوحة الإدارة</span><button id="logout" class="secondary hidden">تسجيل الخروج</button></div></header>
 <main>
 <section id="login" class="login-wrap card"><h2>تسجيل دخول المدير</h2><p class="muted">سجّل الدخول لإدارة مشاريعك البرمجية.</p><form id="login-form" class="form"><input name="username" autocomplete="username" placeholder="اسم المستخدم" required><input name="password" type="password" autocomplete="current-password" placeholder="كلمة المرور" required><button>دخول آمن</button><div id="login-error" class="error"></div></form><div id="setup-note" class="notice hidden">لم يتم إعداد كلمة مرور المدير والمفتاح السري. اضبطهما في ملف .env ثم أعد تشغيل الخدمة.</div></section>
 <section id="dashboard" class="hidden">
