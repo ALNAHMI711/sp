@@ -7,7 +7,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from app.auth import DB as AUTH_DB
+from app import auth as auth_module
 
 ALLOWED_SECRETS = {
     "GITHUB_WEBHOOK_SECRET",
@@ -20,7 +20,7 @@ ALLOWED_SECRETS = {
 
 
 def _paths() -> tuple[Path, Path]:
-    db_path = Path(os.getenv("CONTROL_QUEUE_DB", AUTH_DB))
+    db_path = Path(os.getenv("CONTROL_QUEUE_DB", auth_module.DB))
     return db_path, db_path.with_name("control-secrets.key")
 
 
