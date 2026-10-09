@@ -220,3 +220,16 @@ def test_integration_secrets_reject_unknown_names(tmp_path: Path, monkeypatch) -
         json={"secrets": {"UNSAFE_ARBITRARY_SETTING": "value"}},
     )
     assert response.status_code == 400
+
+
+def test_integration_catalog_lists_optional_credentials_without_exposing_values(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    headers = login_headers(client)
+    response = client.get("/settings/integrations", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    names = {item["name"] for item in data["catalog"]}
+    assert {"GITHUB_WEBHOOK_SECRET", "GITHUB_APP_INSTALLATION_ID", "TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY"} <= names
+    assert all(item["required"] is False for item in data["catalog"])
+    assert "OPENAI_API_KEY" in data["configured"]
+    assert "secret" not in response.text.lower() or "encrypted-control-panel" in response.text
