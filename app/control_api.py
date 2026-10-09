@@ -20,6 +20,7 @@ from worker.worker_registry import WorkerRegistry
 from worker.postgres_worker_registry import PostgresWorkerRegistry
 from worker.repo_policy import approved_repositories
 from app.auth import audit, current_user, login, require_scope
+from app.secrets_store import ALLOWED_SECRETS, delete_secret, get_secret, secret_status, set_secret
 
 app = FastAPI(title="Autonomous Control API", version="0.1.0")
 DB = os.getenv("CONTROL_QUEUE_DB", ".data/control-queue.sqlite3")
@@ -45,11 +46,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
-def _verify_github_signature(body: bytes, signature: str | None) -> bool:
-    if not GITHUB_WEBHOOK_SECRET or not signature or not signature.startswith("sha256="):
+def _verify_github_signature(body: bytes, signature: str | None, secret: str | None = None) -> bool:
+    active_secret = secret if secret is not None else (get_secret("GITHUB_WEBHOOK_SECRET") or GITHUB_WEBHOOK_SECRET)
+    if not active_secret or not signature or not signature.startswith("sha256="):
         return False
     expected = "sha256=" + hmac.new(
-        GITHUB_WEBHOOK_SECRET.encode("utf-8"), body, hashlib.sha256
+        active_secret.encode("utf-8"), body, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
 
@@ -62,6 +64,10 @@ class JobRequest(BaseModel):
     max_attempts: int = Field(default=3, ge=1, le=10)
 
 
+class IntegrationSecretsRequest(BaseModel):
+    secrets: dict[str, str] = Field(default_factory=dict)
+
+
 
 
 @app.post("/webhooks/github")
@@ -70,9 +76,10 @@ async def github_webhook(request: Request) -> dict:
     signature = request.headers.get("x-hub-signature-256")
     delivery_id = request.headers.get("x-github-delivery", "").strip()
     event = request.headers.get("x-github-event", "").strip().lower()
-    if not GITHUB_WEBHOOK_SECRET:
+    webhook_secret = get_secret("GITHUB_WEBHOOK_SECRET") or GITHUB_WEBHOOK_SECRET
+    if not webhook_secret:
         raise HTTPException(status_code=503, detail="GitHub webhook secret is not configured")
-    if not _verify_github_signature(body, signature):
+    if not _verify_github_signature(body, signature, webhook_secret):
         raise HTTPException(status_code=403, detail="invalid webhook signature")
     if not delivery_id:
         raise HTTPException(status_code=400, detail="missing GitHub delivery id")
@@ -118,6 +125,40 @@ async def github_webhook(request: Request) -> dict:
 @app.post("/auth/login")
 def auth_login(payload: LoginRequest) -> dict:
     return {"access_token": login(payload.username, payload.password), "token_type": "bearer"}
+
+
+@app.get("/settings/integrations")
+def get_integration_settings(user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "secrets:read")
+    return {"configured": secret_status(), "storage": "encrypted-control-panel"}
+
+
+@app.put("/settings/integrations")
+def update_integration_settings(
+    payload: IntegrationSecretsRequest, user: dict = Depends(current_user)
+) -> dict:
+    require_scope(user, "secrets:write")
+    unknown = set(payload.secrets) - ALLOWED_SECRETS
+    if unknown:
+        raise HTTPException(status_code=400, detail="unsupported integration setting")
+    saved = []
+    for name, value in payload.secrets.items():
+        if value.strip():
+            set_secret(name, value)
+            saved.append(name)
+    if saved:
+        audit(user["sub"], "integration_secrets_updated", ",".join(sorted(saved)))
+    return {"saved": sorted(saved), "configured": secret_status()}
+
+
+@app.delete("/settings/integrations/{name}")
+def remove_integration_setting(name: str, user: dict = Depends(current_user)) -> dict:
+    require_scope(user, "secrets:write")
+    if name not in ALLOWED_SECRETS:
+        raise HTTPException(status_code=404, detail="integration setting not found")
+    removed = delete_secret(name)
+    audit(user["sub"], "integration_secret_deleted", name)
+    return {"deleted": removed, "configured": secret_status()}
 
 
 @app.get("/health")
