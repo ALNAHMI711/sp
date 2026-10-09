@@ -250,3 +250,14 @@ def test_legacy_sqlite_schema_migrates_lease_token(tmp_path: Path) -> None:
     queue = ControlQueue(db_path)
     columns = {row["name"] for row in queue._db().execute("PRAGMA table_info(jobs)").fetchall()}
     assert "lease_token" in columns
+
+
+def test_finish_rejects_missing_lease_token(tmp_path: Path) -> None:
+    queue = ControlQueue(tmp_path / "queue.sqlite3")
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "finish-missing-token")
+    assert queue.approve(job_id)
+    claimed = queue.claim("worker-a", lease_seconds=60)
+    assert claimed and claimed["job_id"] == job_id
+    with pytest.raises(ValueError, match="worker_id and lease_token are required"):
+        queue.finish(job_id, True, worker_id="worker-a")
+    assert queue.get(job_id)["status"] == "running"
