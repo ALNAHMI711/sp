@@ -133,3 +133,16 @@ def test_postgres_wrong_worker_cannot_finish_active_job(queue):
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token="wrong") is False
     assert queue.get(job_id)["status"] == "running"
     assert queue.finish(job_id, True, worker_id="worker-a", lease_token=queue.get(job_id)["lease_token"]) is True
+
+def test_postgres_missing_lease_token_cannot_renew_or_finish(queue):
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-missing-lease-token")
+    assert queue.approve(job_id)
+    claimed = queue.claim("worker-a", lease_seconds=60)
+    assert claimed and claimed["job_id"] == job_id
+
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+    assert queue.finish(job_id, True, worker_id="worker-a") is False
+    current = queue.get(job_id)
+    assert current["status"] == "running"
+    assert current["lease_token"] == claimed["lease_token"]
+
