@@ -181,7 +181,7 @@ class PostgresQueue:
     def mark_cancelled(self, job_id: str, reason: str = "cancelled") -> bool:
         with self._connect() as db:
             result = db.execute(
-                """UPDATE jobs SET status='cancelled', worker_id=NULL,
+                """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_token=NULL,
                    lease_until=NULL, last_error=%s, updated_at=%s
                    WHERE job_id=%s AND status='cancel_requested'""",
                 (reason[:2000], now(), job_id),
