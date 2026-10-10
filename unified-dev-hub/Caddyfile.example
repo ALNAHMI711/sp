@@ -1,0 +1,5 @@
+# Replace with your real domain before enabling public access.
+your-domain.example {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+}
