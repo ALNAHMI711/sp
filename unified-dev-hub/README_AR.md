@@ -24,6 +24,12 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 افتح `http://localhost:8000`.
 
+## تشغيل الاختبارات
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
 ## تشغيل عبر Docker
 ```bash
 cp .env.example .env
@@ -37,6 +43,11 @@ docker compose up --build -d
 - `SECRET_KEY`: مفتاح جلسة عشوائي لا يقل عن 32 حرفًا.
 - `DATABASE_PATH`: مسار ملف SQLite.
 - `COOKIE_SECURE`: اجعله `true` خلف HTTPS.
+
+لإنشاء مفتاح سري عشوائي محليًا:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
 - `GITHUB_READ_TOKEN`: اختياري؛ رمز قراءة لاستعراض مستودعات GitHub.
 - `VERCEL_READ_TOKEN`: اختياري؛ رمز قراءة لاستعراض مشاريع Vercel.
 
