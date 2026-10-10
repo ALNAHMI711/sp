@@ -125,6 +125,21 @@ class ProjectIn(BaseModel):
     stack: str = Field(default="", max_length=200)
     stage: str = Field(default="idea")
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("اسم المشروع يجب أن يحتوي على حرفين على الأقل")
+        return value
+
+    @field_validator("stage")
+    @classmethod
+    def validate_stage(cls, value: str) -> str:
+        if value not in STAGES:
+            raise ValueError("مرحلة المشروع غير معروفة")
+        return value
+
     @field_validator("repo_url")
     @classmethod
     def validate_repo_url(cls, value: str) -> str:
