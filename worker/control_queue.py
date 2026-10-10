@@ -222,7 +222,7 @@ class ControlQueue:
     def mark_cancelled(self, job_id: str, reason: str = "cancelled") -> bool:
         with self._db() as db:
             changed = db.execute(
-                """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_until=NULL,
+                """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_token=NULL, lease_until=NULL,
                    last_error=?, updated_at=? WHERE job_id=? AND status='cancel_requested'""",
                 (reason[:2000], now(), job_id),
             )
