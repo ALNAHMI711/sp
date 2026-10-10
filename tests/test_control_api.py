@@ -174,3 +174,93 @@ def test_workers_endpoint_rejects_postgres_without_dsn(tmp_path: Path, monkeypat
     monkeypatch.setattr(api, "QUEUE_BACKEND", "postgres")
     monkeypatch.setattr(api, "POSTGRES_DSN", "")
     assert client.get("/workers", headers=login_headers(client)).status_code == 503
+
+
+def test_integration_secrets_are_encrypted_and_never_returned(tmp_path: Path, monkeypatch) -> None:
+    import sqlite3
+
+    client = configured_client(tmp_path, monkeypatch)
+    headers = login_headers(client)
+    secret_value = "github-webhook-secret-test-only"
+
+    saved = client.put(
+        "/settings/integrations",
+        headers=headers,
+        json={"secrets": {"GITHUB_WEBHOOK_SECRET": secret_value, "TELEGRAM_BOT_TOKEN": "telegram-test-token"}},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["configured"]["GITHUB_WEBHOOK_SECRET"] is True
+    assert secret_value not in saved.text
+    assert "telegram-test-token" not in saved.text
+
+    status = client.get("/settings/integrations", headers=headers)
+    assert status.status_code == 200
+    assert status.json()["configured"]["GITHUB_WEBHOOK_SECRET"] is True
+    assert secret_value not in status.text
+
+    db_path = tmp_path / "control.sqlite3"
+    with sqlite3.connect(db_path) as db:
+        row = db.execute(
+            "SELECT encrypted_value FROM integration_secrets WHERE name='GITHUB_WEBHOOK_SECRET'"
+        ).fetchone()
+    assert row is not None
+    assert secret_value.encode() not in bytes(row[0])
+
+    deleted = client.delete("/settings/integrations/TELEGRAM_BOT_TOKEN", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert deleted.json()["configured"]["TELEGRAM_BOT_TOKEN"] is False
+
+
+def test_integration_secrets_reject_unknown_names(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    response = client.put(
+        "/settings/integrations",
+        headers=login_headers(client),
+        json={"secrets": {"UNSAFE_ARBITRARY_SETTING": "value"}},
+    )
+    assert response.status_code == 400
+
+
+def test_integration_catalog_lists_optional_credentials_without_exposing_values(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    headers = login_headers(client)
+    response = client.get("/settings/integrations", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    names = {item["name"] for item in data["catalog"]}
+    assert {"GITHUB_WEBHOOK_SECRET", "GITHUB_APP_INSTALLATION_ID", "TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY"} <= names
+    assert all(item["required"] is False for item in data["catalog"])
+    assert "OPENAI_API_KEY" in data["configured"]
+    assert "secret" not in response.text.lower() or "encrypted-control-panel" in response.text
+
+
+def test_panel_webhook_secret_is_used_for_signature_verification(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(api, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(api, "CONTROL_ALLOWED_REPOS", {"ALNAHMI711/sp"})
+    headers = login_headers(client)
+    secret = "panel-managed-webhook-secret"
+    saved = client.put(
+        "/settings/integrations",
+        headers=headers,
+        json={"secrets": {"GITHUB_WEBHOOK_SECRET": secret}},
+    )
+    assert saved.status_code == 200
+
+    payload = json.dumps({
+        "ref": "refs/heads/main",
+        "after": "abc123",
+        "repository": {"full_name": "ALNAHMI711/sp"},
+    }).encode()
+    response = client.post(
+        "/webhooks/github",
+        content=payload,
+        headers={
+            "X-GitHub-Event": "push",
+            "X-GitHub-Delivery": "panel-secret-delivery",
+            "X-Hub-Signature-256": github_signature(payload, secret),
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending_approval"

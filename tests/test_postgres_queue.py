@@ -80,8 +80,9 @@ def test_postgres_expired_lease_recovery(queue):
 def test_postgres_renew_lease_keeps_active_job_owned(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-renew")
     assert queue.approve(job_id)
-    assert queue.claim("worker-a", lease_seconds=1)
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is True
+    claimed = queue.claim("worker-a", lease_seconds=1)
+    assert claimed and claimed["job_id"] == job_id
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=claimed["lease_token"]) is True
     current = queue.get(job_id)
     assert current["worker_id"] == "worker-a"
     assert current["status"] == "running"
@@ -89,7 +90,8 @@ def test_postgres_renew_lease_keeps_active_job_owned(queue):
 def test_postgres_expired_worker_cannot_finish_after_recovery(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-lease-handoff")
     assert queue.approve(job_id)
-    assert queue.claim("worker-a", lease_seconds=1)
+    original = queue.claim("worker-a", lease_seconds=1)
+    assert original and original["job_id"] == job_id
     with queue._connect() as db:
         db.execute(
             "UPDATE jobs SET lease_until=NOW() - INTERVAL '1 second' WHERE job_id=%s",
@@ -99,8 +101,8 @@ def test_postgres_expired_worker_cannot_finish_after_recovery(queue):
     reclaimed = queue.claim("worker-b", lease_seconds=60)
     assert reclaimed and reclaimed["job_id"] == job_id
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token=reclaimed["lease_token"]) is True
-    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token="stale") is False
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token=original["lease_token"]) is False
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=original["lease_token"]) is False
 
 
 def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
@@ -108,7 +110,8 @@ def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
         "ALNAHMI711/sp", "run tests", "read_only", "pg-recovery-cancel"
     )
     assert queue.approve(job_id)
-    assert queue.claim("worker-a", lease_seconds=1)
+    original = queue.claim("worker-a", lease_seconds=1)
+    assert original and original["job_id"] == job_id
     with queue._connect() as db:
         db.execute(
             "UPDATE jobs SET lease_until=NOW() - INTERVAL '1 second' WHERE job_id=%s",
@@ -120,9 +123,17 @@ def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token=reclaimed["lease_token"]) is False
     assert queue.mark_cancelled(job_id, "recovered_job_cancelled") is True
-    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token="stale") is False
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token=original["lease_token"]) is False
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=original["lease_token"]) is False
     assert queue.get(job_id)["status"] == "cancelled"
+
+
+def test_postgres_renew_lease_rejects_missing_token(queue):
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-renew-missing-token")
+    assert queue.approve(job_id)
+    assert queue.claim("worker-a", lease_seconds=60)
+    with pytest.raises(ValueError, match="worker_id and lease_token are required"):
+        queue.renew_lease(job_id, "worker-a", lease_seconds=60)
 
 
 def test_postgres_wrong_worker_cannot_finish_active_job(queue):
@@ -132,3 +143,13 @@ def test_postgres_wrong_worker_cannot_finish_active_job(queue):
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token="wrong") is False
     assert queue.get(job_id)["status"] == "running"
     assert queue.finish(job_id, True, worker_id="worker-a", lease_token=queue.get(job_id)["lease_token"]) is True
+
+
+def test_postgres_finish_rejects_missing_lease_token(queue):
+    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-finish-missing-token")
+    assert queue.approve(job_id)
+    claimed = queue.claim("worker-a", lease_seconds=60)
+    assert claimed and claimed["job_id"] == job_id
+    with pytest.raises(ValueError, match="worker_id and lease_token are required"):
+        queue.finish(job_id, True, worker_id="worker-a")
+    assert queue.get(job_id)["status"] == "running"

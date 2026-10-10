@@ -35,6 +35,37 @@ textarea{min-height:120px;resize:vertical}button{cursor:pointer;font-weight:700}
 <button onclick="logout()">تسجيل الخروج</button>
 </div>
 
+<div class="card" id="integrationSettings">
+<h2>إعدادات التكامل والمفاتيح</h2>
+<p>أدخل المفاتيح هنا بعد تسجيل الدخول. لن تظهر القيم المحفوظة مرة أخرى، وتُشفّر على الخادم.</p>
+<div class="grid">
+<div><label>GitHub Webhook Secret</label><input id="secret_GITHUB_WEBHOOK_SECRET" type="password" autocomplete="new-password" placeholder="اتركه فارغًا للإبقاء على القيمة الحالية"></div>
+<div><label>GitHub App ID</label><input id="secret_GITHUB_APP_ID" type="password" autocomplete="new-password" placeholder="GitHub App ID"></div>
+<div><label>GitHub App Installation ID</label><input id="secret_GITHUB_APP_INSTALLATION_ID" type="password" autocomplete="new-password" placeholder="Installation ID"></div>
+<div><label>GitHub App Private Key (PEM)</label><textarea id="secret_GITHUB_APP_PRIVATE_KEY" autocomplete="off" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></div>
+<div><label>Telegram Bot Token</label><input id="secret_TELEGRAM_BOT_TOKEN" type="password" autocomplete="new-password" placeholder="توكن البوت"></div>
+<div><label>Telegram Allowed User IDs</label><input id="secret_TELEGRAM_ALLOWED_USER_IDS" type="password" autocomplete="off" placeholder="معرّفات المستخدمين المسموح لهم"></div>
+<div><label>OpenAI API Key (اختياري)</label><input id="secret_OPENAI_API_KEY" type="password" autocomplete="new-password" placeholder="مفتاح OpenAI"></div>
+<div><label>AI API Key (عام، اختياري)</label><input id="secret_AI_API_KEY" type="password" autocomplete="new-password" placeholder="مفتاح مزوّد آخر مدعوم"></div>
+<p>المفاتيح اختيارية بحسب الميزات التي ستفعّلها. الحفظ لا يعني أن الموصل يعمل؛ لا تدخل كلمات مرور النشر أو مفتاح تشفير قاعدة البيانات هنا.</p>
+</div>
+<button onclick="saveIntegrationSettings()">حفظ المفاتيح المشفّرة</button>
+<label>مفتاح لحذفه</label>
+<select id="deleteSecretName">
+<option value="GITHUB_WEBHOOK_SECRET">GitHub Webhook Secret</option>
+<option value="GITHUB_APP_ID">GitHub App ID</option>
+<option value="GITHUB_APP_INSTALLATION_ID">GitHub App Installation ID</option>
+<option value="GITHUB_APP_PRIVATE_KEY">GitHub App Private Key</option>
+<option value="TELEGRAM_BOT_TOKEN">Telegram Bot Token</option>
+<option value="TELEGRAM_ALLOWED_USER_IDS">Telegram Allowed User IDs</option>
+<option value="OPENAI_API_KEY">OpenAI API Key</option>
+<option value="AI_API_KEY">AI API Key</option>
+</select>
+<button onclick="deleteIntegrationSetting()">حذف المفتاح المحدد</button>
+<pre id="integrationStatus">لم يتم تحميل حالة المفاتيح</pre>
+<pre id="integrationResult"></pre>
+</div>
+
 <div class="card">
 <h2>إضافة مهمة</h2>
 <label>المستودع</label>
@@ -80,6 +111,7 @@ async function login(){
   $("loginResult").textContent="";
   setLoggedIn(true);
   refreshHealth();
+  loadIntegrationSettings();
 }
 function logout(){
   token="";
@@ -101,6 +133,45 @@ async function refreshHealth(){
  }catch(e){
    $("health").textContent="غير متاح";
  }
+}
+const secretFields=["GITHUB_WEBHOOK_SECRET","GITHUB_APP_ID","GITHUB_APP_INSTALLATION_ID","GITHUB_APP_PRIVATE_KEY","TELEGRAM_BOT_TOKEN","TELEGRAM_ALLOWED_USER_IDS","OPENAI_API_KEY","AI_API_KEY"];
+const secretLabels={
+ GITHUB_WEBHOOK_SECRET:"GitHub Webhook Secret",GITHUB_APP_ID:"GitHub App ID",
+ GITHUB_APP_INSTALLATION_ID:"GitHub App Installation ID",GITHUB_APP_PRIVATE_KEY:"GitHub App Private Key",TELEGRAM_BOT_TOKEN:"Telegram Bot Token",
+ TELEGRAM_ALLOWED_USER_IDS:"Telegram Allowed User IDs",OPENAI_API_KEY:"OpenAI API Key",AI_API_KEY:"AI API Key"
+};
+async function loadIntegrationSettings(){
+ try{
+  const r=await api("/api/settings/integrations");
+  const d=await r.json();
+  if(!r.ok){$("integrationStatus").textContent="تعذر قراءة حالة المفاتيح";return;}
+  const catalog=d.catalog||[];
+  $("integrationStatus").textContent=catalog.map(item=>{
+    const configured=Boolean((d.configured||{})[item.name]);
+    return (configured?"✓ ":"○ ")+item.label+" — "+(configured?"مضبوط":"غير مضبوط")+
+      " ["+(item.required?"مطلوب":"اختياري")+"]\n  "+item.purpose;
+  }).join("\n\n")+(d.deployment_note?"\n\nملاحظة: "+d.deployment_note:"");
+ }catch(e){$("integrationStatus").textContent="تعذر الاتصال بإعدادات التكامل";}
+}
+async function saveIntegrationSettings(){
+ const secrets={};
+ for(const name of secretFields){
+  const value=$("secret_"+name).value;
+  if(value.trim())secrets[name]=value;
+ }
+ if(!Object.keys(secrets).length){$("integrationResult").textContent="أدخل مفتاحًا واحدًا على الأقل قبل الحفظ.";return;}
+ const r=await api("/api/settings/integrations",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({secrets})});
+ const d=await r.json();
+ $("integrationResult").textContent=r.ok?"تم حفظ: "+(d.saved||[]).map(k=>secretLabels[k]||k).join("، "):"تعذر الحفظ: "+(d.detail||"خطأ غير معروف");
+ if(r.ok){for(const name of secretFields)$("secret_"+name).value="";await loadIntegrationSettings();}
+}
+async function deleteIntegrationSetting(){
+ const name=$("deleteSecretName").value;
+ if(!confirm("هل تريد حذف "+(secretLabels[name]||name)+"؟"))return;
+ const r=await api("/api/settings/integrations/"+encodeURIComponent(name),{method:"DELETE"});
+ const d=await r.json();
+ $("integrationResult").textContent=r.ok?(d.deleted?"تم حذف المفتاح.":"لم يكن المفتاح محفوظًا."):"تعذر الحذف.";
+ await loadIntegrationSettings();
 }
 async function submitJob(){
  const r=await api("/api/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -126,7 +197,7 @@ async function cancelJob(){
  $("jobResult").textContent=JSON.stringify(await r.json(),null,2);
 }
 setLoggedIn(Boolean(token));
-if(token)refreshHealth();
+if(token){refreshHealth();loadIntegrationSettings();}
 setInterval(()=>{if(token)refreshHealth()},15000);
 </script>
 </body>
