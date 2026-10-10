@@ -17,3 +17,21 @@ A starter `render.yaml` is included. Review the plan and persistent-disk pricing
 - Keep the service private until login and authorization tests pass.
 - Do not claim build/deploy status is real unless an actual provider integration verifies it.
 - Back up the database before upgrades and test restoring a copy.
+
+
+## VPS with HTTPS (Caddy example)
+The Compose port is bound to `127.0.0.1:8000`, not the public network. Put a reverse proxy in front of it:
+1. Point your domain's DNS A/AAAA record to the VPS.
+2. Install Caddy using its official instructions.
+3. Copy `Caddyfile.example` to your Caddy configuration and replace `your-domain.example` with your domain.
+4. Keep `COOKIE_SECURE=true` in the app's `.env` when serving over HTTPS.
+5. Start/reload Caddy, then verify the HTTPS URL and `/health`.
+6. Keep port 8000 blocked from public inbound traffic; expose only SSH and the proxy ports as needed.
+
+Generate a secret key with:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+## Backup reminder
+The SQLite database is stored in the persistent `/data` volume. Back it up regularly before upgrades and keep backups outside the running container. Restore a backup to a separate test copy first; never overwrite the only production copy during a test.
