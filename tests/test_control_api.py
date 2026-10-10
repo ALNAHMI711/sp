@@ -233,3 +233,34 @@ def test_integration_catalog_lists_optional_credentials_without_exposing_values(
     assert all(item["required"] is False for item in data["catalog"])
     assert "OPENAI_API_KEY" in data["configured"]
     assert "secret" not in response.text.lower() or "encrypted-control-panel" in response.text
+
+
+def test_panel_webhook_secret_is_used_for_signature_verification(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(api, "GITHUB_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(api, "CONTROL_ALLOWED_REPOS", {"ALNAHMI711/sp"})
+    headers = login_headers(client)
+    secret = "panel-managed-webhook-secret"
+    saved = client.put(
+        "/settings/integrations",
+        headers=headers,
+        json={"secrets": {"GITHUB_WEBHOOK_SECRET": secret}},
+    )
+    assert saved.status_code == 200
+
+    payload = json.dumps({
+        "ref": "refs/heads/main",
+        "after": "abc123",
+        "repository": {"full_name": "ALNAHMI711/sp"},
+    }).encode()
+    response = client.post(
+        "/webhooks/github",
+        content=payload,
+        headers={
+            "X-GitHub-Event": "push",
+            "X-GitHub-Delivery": "panel-secret-delivery",
+            "X-Hub-Signature-256": github_signature(payload, secret),
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending_approval"
