@@ -48,12 +48,15 @@ def test_postgres_two_workers_claim_distinct_jobs(queue):
 def test_postgres_cancel_cannot_be_overwritten(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-cancel")
     assert queue.approve(job_id)
-    queue.claim("worker-a")
+    claimed = queue.claim("worker-a")
+    assert claimed is not None
     assert queue.cancel(job_id) == "cancel_requested"
     current = queue.get(job_id)
     assert queue.finish(job_id, True, worker_id="worker-a", lease_token=current["lease_token"]) is False
     assert queue.mark_cancelled(job_id, "user_cancel") is True
-    assert queue.get(job_id)["status"] == "cancelled"
+    current = queue.get(job_id)
+    assert current["status"] == "cancelled"
+    assert current["lease_token"] is None
 
 
 
