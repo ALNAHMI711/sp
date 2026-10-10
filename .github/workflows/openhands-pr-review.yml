@@ -20,7 +20,21 @@ jobs:
       group: openhands-pr-review-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
+      - name: Check review configuration
+        id: config
+        shell: bash
+        env:
+          LLM_API_KEY: ${{ secrets.OPENHANDS_REVIEW_LLM_API_KEY }}
+        run: |
+          if [ -n "${LLM_API_KEY:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OpenHands review skipped: OPENHANDS_REVIEW_LLM_API_KEY is not configured."
+          fi
+
       - name: Run OpenHands PR Review
+        if: steps.config.outputs.configured == 'true'
         uses: OpenHands/extensions/plugins/pr-review@main
         with:
           llm-model: ${{ vars.OPENHANDS_REVIEW_MODEL || 'anthropic/claude-sonnet-4-5-20250929' }}
