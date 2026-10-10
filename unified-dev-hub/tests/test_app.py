@@ -136,3 +136,11 @@ def test_cross_origin_mutation_is_blocked(client):
         headers={"Origin": "https://attacker.example"},
     )
     assert response.status_code == 403
+
+
+def test_invalid_stage_and_blank_name_are_rejected(client):
+    assert login(client).status_code == 200
+    invalid_stage = create_project(client, stage="unknown-stage")
+    assert invalid_stage.status_code == 422
+    blank_name = create_project(client, name="  ")
+    assert blank_name.status_code == 422
