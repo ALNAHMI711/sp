@@ -80,8 +80,9 @@ def test_postgres_expired_lease_recovery(queue):
 def test_postgres_renew_lease_keeps_active_job_owned(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-renew")
     assert queue.approve(job_id)
-    assert queue.claim("worker-a", lease_seconds=1)
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is True
+    claimed = queue.claim("worker-a", lease_seconds=1)
+    assert claimed
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=claimed["lease_token"]) is True
     current = queue.get(job_id)
     assert current["worker_id"] == "worker-a"
     assert current["status"] == "running"
