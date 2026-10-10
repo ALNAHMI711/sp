@@ -12,6 +12,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: unified-dev-hub
@@ -30,6 +32,32 @@ jobs:
         run: pytest -q
       - name: Build production Docker image
         run: docker build --tag unified-dev-hub:ci .
+      - name: Smoke-test the production container
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_name="udh-smoke-${GITHUB_RUN_ID}"
+          cleanup() { docker logs "$container_name" 2>/dev/null || true; docker rm -f "$container_name" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run --detach --name "$container_name" \
+            --publish 127.0.0.1:18000:8000 \
+            --env ADMIN_USERNAME=ci-admin \
+            --env ADMIN_PASSWORD=ci-only-test-password-12345 \
+            --env SECRET_KEY=ci-only-secret-key-long-enough-for-tests-123456789 \
+            --env COOKIE_SECURE=false \
+            unified-dev-hub:ci
+          healthy=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/health > /tmp/udh-health.json; then
+              healthy=1
+              break
+            fi
+            sleep 2
+          done
+          test "$healthy" -eq 1
+          python -c 'import json; d=json.load(open("/tmp/udh-health.json")); assert d["status"] == "ok" and d["database"] == "ok" and d["configured"] is True, d'
+          curl --fail --silent http://127.0.0.1:18000/ | grep -q 'مركز التطوير الموحد'
+          echo "Container health and Arabic dashboard smoke checks passed."
       - name: Upload application source as downloadable ZIP
         uses: actions/upload-artifact@v4
         with:
