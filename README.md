@@ -41,7 +41,7 @@
 هذا إعداد VPS ذاتي الاستضافة، وليس نشرًا تلقائيًا على خدمة مجانية:
 
 1. ثبّت Docker Engine وDocker Compose على VPS يدعم تشغيل الحاويات.
-2. انسخ `.env.example` إلى `.env`، ثم عيّن قيمًا قوية وفريدة لـ `CONTROL_ADMIN_PASSWORD` و`CONTROL_JWT_SECRET` و`GITHUB_WEBHOOK_SECRET` و`POSTGRES_PASSWORD`. لا ترفع ملف `.env`.
+2. انسخ `.env.example` إلى `.env`، وانسخ `deploy/worker.env.example` إلى `deploy/worker.env`، ثم عيّن قيمًا قوية وفريدة لـ `CONTROL_ADMIN_PASSWORD` و`CONTROL_JWT_SECRET` و`GITHUB_WEBHOOK_SECRET` و`POSTGRES_PASSWORD`. املأ إعدادات OpenHands في `deploy/worker.env` إذا أردت تفعيل منفّذ المهام. لا ترفع أيًا من الملفين الفعليين إلى Git.
 3. جهّز شهادة TLS صالحة لنطاقك وضع `fullchain.pem` و`privkey.pem` في مجلد `tls` (أو اضبط `CONTROL_TLS_DIR` إلى مسار آخر). لا تستخدم شهادة وهمية في الإنتاج.
 4. شغّل من جذر المستودع:
 
@@ -54,7 +54,7 @@ docker compose --env-file .env -f deploy/compose.control-plane.yml logs --tail=1
 5. وجّه DNS للنطاق إلى عنوان VPS، وافتح TCP 80/443 فقط للويب، وقيّد SSH إلى عناوين الإدارة الموثوقة.
 6. افتح النطاق عبر HTTPS واختبر تسجيل الدخول، الصحة، إنشاء مهمة، الموافقة، الإلغاء، وسجل التدقيق قبل الاستخدام.
 
-يخدم Nginx مجلد `dashboard/` ويحوّل `/api/*` إلى API، ويحوّل HTTP إلى HTTPS. يحتاج Nginx إلى الشهادة قبل بدء التشغيل. لا تعني حالة الحاوية `healthy` أن جميع التكاملات الخارجية جاهزة.
+يخدم Nginx مجلد `dashboard/` ويحوّل `/api/*` إلى API، ويحوّل HTTP إلى HTTPS. يحدّ الوكيل محاولات تسجيل الدخول إلى 5 طلبات في الدقيقة لكل عنوان IP مع سماح اندفاعي محدود، ويضيف ترويسات حماية للمتصفح. يحتاج Nginx إلى الشهادة قبل بدء التشغيل. لا تعني حالة الحاوية `healthy` أن جميع التكاملات الخارجية جاهزة.
 
 ### اختيار قاعدة البيانات
 
