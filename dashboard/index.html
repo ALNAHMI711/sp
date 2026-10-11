@@ -38,13 +38,8 @@ textarea{min-height:120px;resize:vertical}button{cursor:pointer;font-weight:700}
 <div class="card">
 <h2>إضافة مهمة</h2>
 <label>المستودع</label>
-<select id="repo">
-<option>ALNAHMI711/sp</option>
-<option>ALNAHMI711/Ahmed-Alnahmi-711</option>
-<option>ALNAHMI711/autonomous-business-manager</option>
-<option>ALNAHMI711/-</option>
-<option>ALNAHMI711/tte</option>
-</select>
+<select id="repo" required><option value="">جارٍ تحميل المستودعات...</option></select>
+<small id="repoHelp">تظهر هنا المستودعات المسموح بها في إعدادات الخادم فقط.</small>
 <label>المهمة</label><textarea id="task" placeholder="مثال: افحص الاختبارات وحدد أسباب فشل CI"></textarea>
 <label>الوضع</label><select id="mode"><option value="read_only">قراءة فقط</option><option value="propose_changes">اقتراح تغييرات</option></select>
 <button onclick="submitJob()">إرسال للموافقة</button>
@@ -80,6 +75,7 @@ async function login(){
   $("loginResult").textContent="";
   setLoggedIn(true);
   refreshHealth();
+  loadRepos();
 }
 function logout(){
   token="";
@@ -91,6 +87,31 @@ async function api(path,options={}){
   const r=await fetch(path,{...options,headers:{...headers(),...(options.headers||{})}});
   if(r.status===401){logout();}
   return r;
+}
+async function loadRepos(){
+ try{
+   const r=await api("/api/repos");
+   if(!r.ok) throw new Error("تعذر تحميل المستودعات ("+r.status+")");
+   const d=await r.json();
+   const select=$("repo");
+   select.replaceChildren();
+   for(const name of d.repositories||[]){
+     const option=document.createElement("option");
+     option.value=name;
+     option.textContent=name;
+     select.appendChild(option);
+   }
+   if(!select.options.length){
+     const option=document.createElement("option");
+     option.value="";
+     option.textContent="لا توجد مستودعات مسموح بها";
+     select.appendChild(option);
+   }
+   $("repoHelp").textContent="المستودعات المسموح بها: "+(d.repositories||[]).length+" — تُدار القائمة من إعدادات الخادم.";
+ }catch(e){
+   $("repo").replaceChildren(new Option("فشل تحميل المستودعات",""));
+   $("repoHelp").textContent=e.message;
+ }
 }
 async function refreshHealth(){
  try{
@@ -126,7 +147,7 @@ async function cancelJob(){
  $("jobResult").textContent=JSON.stringify(await r.json(),null,2);
 }
 setLoggedIn(Boolean(token));
-if(token)refreshHealth();
+if(token){refreshHealth();loadRepos();}
 setInterval(()=>{if(token)refreshHealth()},15000);
 </script>
 </body>
