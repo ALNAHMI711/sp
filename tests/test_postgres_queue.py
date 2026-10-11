@@ -76,6 +76,7 @@ def test_postgres_expired_lease_recovery(queue):
         )
     assert queue.recover_expired() == 1
     assert queue.get(job_id)["status"] == "queued"
+    assert queue.get(job_id)["lease_token"] is None
 
 
 def test_postgres_renew_lease_keeps_active_job_owned(queue):

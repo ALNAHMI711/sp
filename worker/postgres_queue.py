@@ -194,7 +194,7 @@ class PostgresQueue:
             result = db.execute(
                 """UPDATE jobs SET
                    status=CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END,
-                   worker_id=NULL, lease_until=NULL,
+                   worker_id=NULL, lease_token=NULL, lease_until=NULL,
                    last_error='worker_lease_expired', updated_at=%s
                    WHERE status='running' AND lease_until IS NOT NULL AND lease_until<=%s""",
                 (stamp, stamp),
