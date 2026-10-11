@@ -155,6 +155,7 @@ def test_expired_worker_cannot_finish_after_recovery(tmp_path: Path) -> None:
             ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), job_id),
         )
     assert queue.recover_expired() == 1
+    assert queue.get(job_id)["lease_token"] is None
     assert queue.claim("worker-2", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token="stale") is False
