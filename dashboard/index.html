@@ -36,6 +36,14 @@ textarea{min-height:120px;resize:vertical}button{cursor:pointer;font-weight:700}
 </div>
 
 <div class="card">
+<h2>مستودعات GitHub</h2>
+<p>عرض المستودعات التي يمكن لحساب GitHub الوصول إليها. الظهور هنا لا يمنح صلاحية تشغيل المهام؛ التشغيل محصور بالمستودعات المعتمدة في الخادم.</p>
+<button onclick="loadInventory()">تحديث قائمة المستودعات</button>
+<pre id="inventorySummary">لم يتم تحميل القائمة بعد.</pre>
+<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th>المستودع</th><th>الخصوصية</th><th>فرع النشر</th><th>اعتماد المهام</th></tr></thead><tbody id="inventoryRows"></tbody></table></div>
+</div>
+
+<div class="card">
 <h2>إضافة مهمة</h2>
 <label>المستودع</label>
 <select id="repo" required><option value="">جارٍ تحميل المستودعات...</option></select>
@@ -76,6 +84,7 @@ async function login(){
   setLoggedIn(true);
   refreshHealth();
   loadRepos();
+  loadInventory();
 }
 function logout(){
   token="";
@@ -113,6 +122,35 @@ async function loadRepos(){
    $("repoHelp").textContent=e.message;
  }
 }
+async function loadInventory(){
+ const summary=$("inventorySummary"), rows=$("inventoryRows");
+ summary.textContent="جارٍ جلب المستودعات من GitHub...";
+ rows.replaceChildren();
+ try{
+   const r=await api("/api/repository-inventory");
+   const data=await r.json();
+   if(!r.ok) throw new Error(data.detail||("فشل الطلب: "+r.status));
+   summary.textContent="المالك: "+data.owner+" | العدد: "+data.count+
+     " | النطاق: "+(data.authenticated?"خاص وعام":"عام فقط")+
+     (data.truncated?" | تنبيه: وصلت القائمة إلى الحد الأقصى (1000)":"");
+   for(const repo of data.repositories||[]){
+     const tr=document.createElement("tr");
+     for(const value of [
+       repo.full_name,
+       repo.private?"خاص":"عام",
+       repo.default_branch||"—",
+       repo.approved_for_jobs?"معتمد":"غير معتمد"
+     ]){
+       const td=document.createElement("td");
+       td.textContent=value;
+       td.style.padding="8px";
+       td.style.borderBottom="1px solid #24354c";
+       tr.appendChild(td);
+     }
+     rows.appendChild(tr);
+   }
+ }catch(e){summary.textContent="تعذر تحميل المستودعات: "+e.message;}
+}
 async function refreshHealth(){
  try{
    const r=await fetch("/api/health");
@@ -147,7 +185,7 @@ async function cancelJob(){
  $("jobResult").textContent=JSON.stringify(await r.json(),null,2);
 }
 setLoggedIn(Boolean(token));
-if(token){refreshHealth();loadRepos();}
+if(token){refreshHealth();loadRepos();loadInventory();}
 setInterval(()=>{if(token)refreshHealth()},15000);
 </script>
 </body>
