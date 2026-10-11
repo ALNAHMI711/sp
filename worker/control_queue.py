@@ -157,7 +157,7 @@ class ControlQueue:
 
     def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900, lease_token: str | None = None) -> bool:
         if not worker_id or not lease_token:
-            return False
+            raise ValueError("worker_id and lease_token are required to renew a lease")
         if lease_seconds < 1:
             raise ValueError("lease_seconds must be positive")
         lease = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()
@@ -171,7 +171,7 @@ class ControlQueue:
 
     def finish(self, job_id: str, success: bool, error: str = "", worker_id: str | None = None, lease_token: str | None = None) -> bool:
         if not worker_id or not lease_token:
-            return False
+            raise ValueError("worker_id and lease_token are required to finish a job")
         status = "succeeded" if success else "failed"
         with self._db() as db:
             changed = db.execute(
@@ -222,7 +222,7 @@ class ControlQueue:
     def mark_cancelled(self, job_id: str, reason: str = "cancelled") -> bool:
         with self._db() as db:
             changed = db.execute(
-                """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_token=NULL, lease_until=NULL,
+                """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_until=NULL,
                    last_error=?, updated_at=? WHERE job_id=? AND status='cancel_requested'""",
                 (reason[:2000], now(), job_id),
             )
