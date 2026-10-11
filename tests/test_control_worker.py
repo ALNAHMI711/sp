@@ -83,8 +83,8 @@ def test_worker_a_cannot_renew_or_finish_after_recovery(tmp_path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "failover integration", "read_only", max_attempts=3)
     assert queue.approve(job_id)
-    claimed = queue.claim("worker-a", lease_seconds=1)
-    assert claimed and claimed["job_id"] == job_id
+    first_claim = queue.claim("worker-a", lease_seconds=1)
+    assert first_claim and first_claim["job_id"] == job_id
 
     with queue._db() as db:
         db.execute(
@@ -96,9 +96,9 @@ def test_worker_a_cannot_renew_or_finish_after_recovery(tmp_path) -> None:
     reclaimed = queue.claim("worker-b", lease_seconds=60)
     assert reclaimed and reclaimed["job_id"] == job_id
 
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
-    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a") is False
-    assert queue.finish(job_id, True, worker_id="worker-b") is True
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=first_claim["lease_token"]) is False
+    assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token=first_claim["lease_token"]) is False
+    assert queue.finish(job_id, True, worker_id="worker-b", lease_token=reclaimed["lease_token"]) is True
 
 
 def test_lease_heartbeat_treats_backend_error_as_lease_loss() -> None:
