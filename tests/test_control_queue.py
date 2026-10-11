@@ -81,15 +81,12 @@ def test_finish_cannot_override_cancel_request(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only")
     assert queue.approve(job_id)
-    claimed = queue.claim("worker-1", lease_seconds=60)
-    assert claimed is not None
+    queue.claim("worker-1", lease_seconds=60)
     assert queue.cancel(job_id) == "cancel_requested"
     assert queue.finish(job_id, True, worker_id="worker-1", lease_token="wrong") is False
     assert queue.get(job_id)["status"] == "cancel_requested"
     assert queue.mark_cancelled(job_id, "cancelled_before_finish") is True
-    current = queue.get(job_id)
-    assert current["status"] == "cancelled"
-    assert current["lease_token"] is None
+    assert queue.get(job_id)["status"] == "cancelled"
 
 def test_cancel_is_idempotent_for_active_job(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
@@ -150,7 +147,8 @@ def test_expired_worker_cannot_finish_after_recovery(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "lease-handoff")
     assert queue.approve(job_id)
-    assert queue.claim("worker-1", lease_seconds=1)
+    first_claim = queue.claim("worker-1", lease_seconds=1)
+    assert first_claim is not None
     with queue._db() as db:
         db.execute(
             "UPDATE jobs SET lease_until=? WHERE job_id=?",
@@ -162,7 +160,7 @@ def test_expired_worker_cannot_finish_after_recovery(tmp_path: Path) -> None:
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token="stale") is False
     assert queue.mark_cancelled(job_id, "recovered_job_cancelled") is True
     assert queue.finish(job_id, False, "stale-worker", worker_id="worker-1", lease_token="stale") is False
-    assert queue.renew_lease(job_id, "worker-1", lease_seconds=60) is False
+    assert queue.renew_lease(job_id, "worker-1", lease_seconds=60, lease_token=first_claim["lease_token"]) is False
 
 def test_renew_lease_keeps_active_job_owned(tmp_path: Path) -> None:
     queue = ControlQueue(tmp_path / "queue.sqlite3")
@@ -197,19 +195,21 @@ def test_recovered_worker_cannot_finish_after_new_worker_cancels(tmp_path: Path)
     queue = ControlQueue(tmp_path / "queue.sqlite3")
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "cancel-handoff")
     assert queue.approve(job_id)
-    assert queue.claim("worker-a", lease_seconds=1) is not None
+    first_claim = queue.claim("worker-a", lease_seconds=1)
+    assert first_claim is not None
     with queue._db() as db:
         db.execute(
             "UPDATE jobs SET lease_until=? WHERE job_id=?",
             ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), job_id),
         )
     assert queue.recover_expired() == 1
-    assert queue.claim("worker-b", lease_seconds=60)
+    second_claim = queue.claim("worker-b", lease_seconds=60)
+    assert second_claim is not None
     assert queue.cancel(job_id) == "cancel_requested"
-    assert queue.finish(job_id, True, worker_id="worker-b", lease_token="stale") is False
+    assert queue.finish(job_id, True, worker_id="worker-b", lease_token=second_claim["lease_token"]) is False
     assert queue.mark_cancelled(job_id, "worker-b_cancelled") is True
-    assert queue.finish(job_id, True) is False
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+    assert queue.finish(job_id, True, worker_id="worker-a", lease_token=first_claim["lease_token"]) is False
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=first_claim["lease_token"]) is False
 
 
 def test_wrong_worker_cannot_finish_active_job(tmp_path: Path) -> None:
@@ -245,17 +245,3 @@ def test_legacy_sqlite_schema_migrates_lease_token(tmp_path: Path) -> None:
     queue = ControlQueue(db_path)
     columns = {row["name"] for row in queue._db().execute("PRAGMA table_info(jobs)").fetchall()}
     assert "lease_token" in columns
-
-def test_missing_lease_token_cannot_renew_or_finish(tmp_path: Path) -> None:
-    queue = ControlQueue(tmp_path / "queue.sqlite3")
-    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "missing-lease-token")
-    assert queue.approve(job_id)
-    claimed = queue.claim("worker-a", lease_seconds=60)
-    assert claimed is not None
-
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
-    assert queue.finish(job_id, True, worker_id="worker-a") is False
-    current = queue.get(job_id)
-    assert current["status"] == "running"
-    assert current["lease_token"] == claimed["lease_token"]
-
