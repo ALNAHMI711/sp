@@ -137,7 +137,7 @@ class PostgresQueue:
 
     def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900, lease_token: str | None = None) -> bool:
         if not worker_id or not lease_token:
-            return False
+            raise ValueError("worker_id and lease_token are required to renew a lease")
         if lease_seconds < 1:
             raise ValueError("lease_seconds must be positive")
         lease = now() + timedelta(seconds=lease_seconds)
@@ -151,7 +151,7 @@ class PostgresQueue:
 
     def finish(self, job_id: str, success: bool, error: str = "", worker_id: str | None = None, lease_token: str | None = None) -> bool:
         if not worker_id or not lease_token:
-            return False
+            raise ValueError("worker_id and lease_token are required to finish a job")
         status = "succeeded" if success else "failed"
         with self._connect() as db:
             result = db.execute(
@@ -194,7 +194,7 @@ class PostgresQueue:
             result = db.execute(
                 """UPDATE jobs SET
                    status=CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END,
-                   worker_id=NULL, lease_token=NULL, lease_until=NULL,
+                   worker_id=NULL, lease_until=NULL,
                    last_error='worker_lease_expired', updated_at=%s
                    WHERE status='running' AND lease_until IS NOT NULL AND lease_until<=%s""",
                 (stamp, stamp),
