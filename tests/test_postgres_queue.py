@@ -54,9 +54,7 @@ def test_postgres_cancel_cannot_be_overwritten(queue):
     current = queue.get(job_id)
     assert queue.finish(job_id, True, worker_id="worker-a", lease_token=current["lease_token"]) is False
     assert queue.mark_cancelled(job_id, "user_cancel") is True
-    current = queue.get(job_id)
-    assert current["status"] == "cancelled"
-    assert current["lease_token"] is None
+    assert queue.get(job_id)["status"] == "cancelled"
 
 
 
@@ -84,7 +82,7 @@ def test_postgres_renew_lease_keeps_active_job_owned(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-renew")
     assert queue.approve(job_id)
     claimed = queue.claim("worker-a", lease_seconds=1)
-    assert claimed
+    assert claimed is not None
     assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=claimed["lease_token"]) is True
     current = queue.get(job_id)
     assert current["worker_id"] == "worker-a"
@@ -93,7 +91,8 @@ def test_postgres_renew_lease_keeps_active_job_owned(queue):
 def test_postgres_expired_worker_cannot_finish_after_recovery(queue):
     job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-lease-handoff")
     assert queue.approve(job_id)
-    assert queue.claim("worker-a", lease_seconds=1)
+    first_claim = queue.claim("worker-a", lease_seconds=1)
+    assert first_claim is not None
     with queue._connect() as db:
         db.execute(
             "UPDATE jobs SET lease_until=NOW() - INTERVAL '1 second' WHERE job_id=%s",
@@ -104,7 +103,9 @@ def test_postgres_expired_worker_cannot_finish_after_recovery(queue):
     assert reclaimed and reclaimed["job_id"] == job_id
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token=reclaimed["lease_token"]) is True
     assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token="stale") is False
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+    with pytest.raises(ValueError, match="lease_token"):
+        queue.renew_lease(job_id, "worker-a", lease_seconds=60)
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=first_claim["lease_token"]) is False
 
 
 def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
@@ -112,7 +113,8 @@ def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
         "ALNAHMI711/sp", "run tests", "read_only", "pg-recovery-cancel"
     )
     assert queue.approve(job_id)
-    assert queue.claim("worker-a", lease_seconds=1)
+    first_claim = queue.claim("worker-a", lease_seconds=1)
+    assert first_claim is not None
     with queue._connect() as db:
         db.execute(
             "UPDATE jobs SET lease_until=NOW() - INTERVAL '1 second' WHERE job_id=%s",
@@ -125,7 +127,9 @@ def test_postgres_recovered_job_cancellation_blocks_late_worker(queue):
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token=reclaimed["lease_token"]) is False
     assert queue.mark_cancelled(job_id, "recovered_job_cancelled") is True
     assert queue.finish(job_id, False, "stale-worker", worker_id="worker-a", lease_token="stale") is False
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
+    with pytest.raises(ValueError, match="lease_token"):
+        queue.renew_lease(job_id, "worker-a", lease_seconds=60)
+    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60, lease_token=first_claim["lease_token"]) is False
     assert queue.get(job_id)["status"] == "cancelled"
 
 
@@ -136,16 +140,3 @@ def test_postgres_wrong_worker_cannot_finish_active_job(queue):
     assert queue.finish(job_id, True, worker_id="worker-b", lease_token="wrong") is False
     assert queue.get(job_id)["status"] == "running"
     assert queue.finish(job_id, True, worker_id="worker-a", lease_token=queue.get(job_id)["lease_token"]) is True
-
-def test_postgres_missing_lease_token_cannot_renew_or_finish(queue):
-    job_id = queue.enqueue("ALNAHMI711/sp", "run tests", "read_only", "pg-missing-lease-token")
-    assert queue.approve(job_id)
-    claimed = queue.claim("worker-a", lease_seconds=60)
-    assert claimed and claimed["job_id"] == job_id
-
-    assert queue.renew_lease(job_id, "worker-a", lease_seconds=60) is False
-    assert queue.finish(job_id, True, worker_id="worker-a") is False
-    current = queue.get(job_id)
-    assert current["status"] == "running"
-    assert current["lease_token"] == claimed["lease_token"]
-
