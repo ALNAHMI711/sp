@@ -136,14 +136,16 @@ class PostgresQueue:
             return dict(claimed) if claimed else None
 
     def renew_lease(self, job_id: str, worker_id: str, lease_seconds: int = 900, lease_token: str | None = None) -> bool:
+        if not worker_id or not lease_token:
+            raise ValueError("worker_id and lease_token are required to renew a lease")
         if lease_seconds < 1:
             raise ValueError("lease_seconds must be positive")
         lease = now() + timedelta(seconds=lease_seconds)
         with self._connect() as db:
             result = db.execute(
                 """UPDATE jobs SET lease_until=%s, updated_at=%s
-                   WHERE job_id=%s AND worker_id=%s AND status='running' AND (%s IS NULL OR lease_token=%s)""",
-                (lease, now(), job_id, worker_id, lease_token, lease_token),
+                   WHERE job_id=%s AND worker_id=%s AND status='running' AND lease_token=%s""",
+                (lease, now(), job_id, worker_id, lease_token),
             )
         return result.rowcount == 1
 
@@ -155,8 +157,8 @@ class PostgresQueue:
             result = db.execute(
                 """UPDATE jobs SET status=%s, worker_id=NULL, lease_token=NULL, lease_until=NULL,
                    last_error=%s, updated_at=%s
-                   WHERE job_id=%s AND (worker_id=%s OR %s IS NULL) AND status='running' AND (%s IS NULL OR lease_token=%s)""",
-                (status, error[:2000], now(), job_id, worker_id, worker_id, lease_token, lease_token),
+                   WHERE job_id=%s AND worker_id=%s AND status='running' AND lease_token=%s""",
+                (status, error[:2000], now(), job_id, worker_id, lease_token),
             )
         return result.rowcount == 1
 
@@ -179,7 +181,7 @@ class PostgresQueue:
     def mark_cancelled(self, job_id: str, reason: str = "cancelled") -> bool:
         with self._connect() as db:
             result = db.execute(
-                """UPDATE jobs SET status='cancelled', worker_id=NULL,
+                """UPDATE jobs SET status='cancelled', worker_id=NULL, lease_token=NULL,
                    lease_until=NULL, last_error=%s, updated_at=%s
                    WHERE job_id=%s AND status='cancel_requested'""",
                 (reason[:2000], now(), job_id),
