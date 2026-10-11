@@ -174,3 +174,24 @@ def test_workers_endpoint_rejects_postgres_without_dsn(tmp_path: Path, monkeypat
     monkeypatch.setattr(api, "QUEUE_BACKEND", "postgres")
     monkeypatch.setattr(api, "POSTGRES_DSN", "")
     assert client.get("/workers", headers=login_headers(client)).status_code == 503
+
+
+
+def test_approved_repositories_endpoint_requires_auth_and_lists_allowlist(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    monkeypatch.setattr(api, "CONTROL_ALLOWED_REPOS", frozenset({
+        "ALNAHMI711/sp",
+        "ALNAHMI711/autonomous-business-manager",
+    }))
+
+    denied = client.get("/repos")
+    assert denied.status_code == 401
+
+    response = client.get("/repos", headers=login_headers(client))
+    assert response.status_code == 200
+    assert response.json() == {
+        "repositories": [
+            "ALNAHMI711/autonomous-business-manager",
+            "ALNAHMI711/sp",
+        ]
+    }
