@@ -236,3 +236,61 @@ def test_repository_inventory_requires_auth_and_reports_public_visibility(tmp_pa
     assert data["visibility_scope"] == "public_only"
     assert data["count"] == 1
     assert data["repositories"][0]["approved_for_jobs"] is True
+
+
+
+def test_repository_inventory_uses_authenticated_endpoint_and_filters_other_owners(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    observed = {}
+
+    class FakeResponse:
+        status_code = 200
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return [
+                {
+                    "full_name": "ALNAHMI711/private-project",
+                    "html_url": "https://github.com/ALNAHMI711/private-project",
+                    "private": True,
+                    "default_branch": "main",
+                    "updated_at": "2026-10-11T00:00:00Z",
+                },
+                {
+                    "full_name": "someone-else/other-project",
+                    "html_url": "https://github.com/someone-else/other-project",
+                    "private": False,
+                    "default_branch": "main",
+                    "updated_at": "2026-10-11T00:00:00Z",
+                },
+            ]
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def get(self, url, **kwargs):
+            observed["url"] = url
+            observed["headers"] = kwargs.get("headers", {})
+            observed["params"] = kwargs.get("params", {})
+            return FakeResponse()
+
+    monkeypatch.setattr(api.httpx, "Client", FakeClient)
+    monkeypatch.setenv("GITHUB_READ_TOKEN", "test-read-token")
+    monkeypatch.setenv("GITHUB_OWNER", "ALNAHMI711")
+    monkeypatch.setattr(api, "CONTROL_ALLOWED_REPOS", frozenset())
+
+    response = client.get("/repository-inventory", headers=login_headers(client))
+    assert response.status_code == 200
+    data = response.json()
+    assert observed["url"] == "https://api.github.com/user/repos"
+    assert observed["headers"]["Authorization"] == "Bearer test-read-token"
+    assert observed["params"]["affiliation"] == "owner"
+    assert data["visibility_scope"] == "private_and_public"
+    assert data["count"] == 1
+    assert data["repositories"][0]["full_name"] == "ALNAHMI711/private-project"
+    assert data["repositories"][0]["private"] is True
+    assert data["repositories"][0]["approved_for_jobs"] is False
