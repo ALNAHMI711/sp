@@ -11,6 +11,8 @@ import json
 import os
 from pathlib import Path
 
+import httpx
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -125,6 +127,62 @@ def list_approved_repositories(user: dict = Depends(current_user)) -> dict:
     """Return only server-approved repositories to authenticated dashboard users."""
     require_scope(user, "jobs:write")
     return {"repositories": sorted(CONTROL_ALLOWED_REPOS)}
+
+
+@app.get("/repository-inventory")
+def repository_inventory(user: dict = Depends(current_user)) -> dict:
+    """List repositories visible to the configured GitHub account without granting execution approval."""
+    require_scope(user, "jobs:write")
+    owner = os.getenv("GITHUB_OWNER", "ALNAHMI711").strip()
+    if not owner or "/" in owner:
+        raise HTTPException(status_code=500, detail="invalid GitHub owner configuration")
+    token = os.getenv("GITHUB_READ_TOKEN", "").strip()
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    repositories = []
+    try:
+        with httpx.Client(timeout=8.0, follow_redirects=False) as client:
+            for page in range(1, 11):
+                response = client.get(
+                    f"https://api.github.com/users/{owner}/repos",
+                    params={"per_page": 100, "page": page, "sort": "updated"},
+                    headers=headers,
+                )
+                if response.status_code == 404:
+                    raise HTTPException(status_code=404, detail="GitHub owner not found")
+                if response.status_code == 401 or response.status_code == 403:
+                    raise HTTPException(status_code=502, detail="GitHub API access denied or rate limited")
+                response.raise_for_status()
+                batch = response.json()
+                if not isinstance(batch, list):
+                    raise HTTPException(status_code=502, detail="unexpected GitHub API response")
+                for item in batch:
+                    full_name = str(item.get("full_name") or "")
+                    if not full_name:
+                        continue
+                    repositories.append({
+                        "full_name": full_name,
+                        "url": str(item.get("html_url") or ""),
+                        "private": bool(item.get("private", False)),
+                        "default_branch": str(item.get("default_branch") or ""),
+                        "updated_at": str(item.get("updated_at") or ""),
+                        "approved_for_jobs": full_name in CONTROL_ALLOWED_REPOS,
+                    })
+                if len(batch) < 100:
+                    break
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="GitHub repository inventory unavailable") from exc
+    return {
+        "owner": owner,
+        "authenticated": bool(token),
+        "visibility_scope": "private_and_public" if token else "public_only",
+        "truncated": len(repositories) >= 1000,
+        "count": len(repositories),
+        "repositories": repositories,
+    }
 
 
 @app.get("/health")
