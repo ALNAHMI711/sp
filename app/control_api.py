@@ -120,6 +120,13 @@ def auth_login(payload: LoginRequest) -> dict:
     return {"access_token": login(payload.username, payload.password), "token_type": "bearer"}
 
 
+@app.get("/repos")
+def list_approved_repositories(user: dict = Depends(current_user)) -> dict:
+    """Return only server-approved repositories to authenticated dashboard users."""
+    require_scope(user, "jobs:write")
+    return {"repositories": sorted(CONTROL_ALLOWED_REPOS)}
+
+
 @app.get("/health")
 def health() -> dict:
     try:
