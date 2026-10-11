@@ -1,39 +1,53 @@
 # Autonomous Cloud Execution & Control Hub
 
-منصة سحابية خاصة للإدارة والتشغيل والمراقبة الآلية للمشاريع، مصممة لتعمل 24/7 دون اعتماد على اتصال الهاتف.
+منصة سحابية لإدارة مستودعات GitHub ومهام الفحص والتنفيذ المراقب من لوحة عربية RTL، مع فصل واجهة التحكم عن العامل (Worker). الهاتف عميل للتحكم فقط؛ التشغيل الدائم يتطلب نشر API والعامل وقاعدة البيانات على خادم مناسب.
 
-## الحالة
+## الحالة الحالية
 
-Repository جديد وفارغ عند بدء التنفيذ. هذه المرحلة تضع وثيقة المتطلبات ونقطة انطلاق قابلة للتتبع قبل تنفيذ البنية التشغيلية.
+- لوحة تحكم عربية لتسجيل الدخول، عرض الصحة وKill Switch، إرسال مهمة، متابعة Job، اعتماد المهمة أو إلغاؤها.
+- API محمية بالمصادقة والصلاحيات، وقائمة مستودعات تنفيذ معتمدة منفصلة عن جرد مستودعات GitHub.
+- جرد المستودعات العامة يعمل دون Token؛ يمكن إظهار الخاصة باستخدام `GITHUB_READ_TOKEN` محفوظ على الخادم.
+- GitHub webhook يتحقق من توقيع SHA-256 ويحوّل push من مستودع معتمد إلى مهمة قراءة فقط بانتظار الموافقة.
+- Queue يدعم SQLite وPostgreSQL؛ توجد اختبارات API وتكامل CI.
+- **Production Ready: NO** — لا تعتبر المنصة منشورة أو عاملة 24/7 حتى يتم إعداد الأسرار وقاعدة البيانات والعامل والنشر وHTTPS، ثم اختبار المسار الكامل فعليًا.
 
-**Production Ready:** NO
+## الإعداد المحلي
 
-## المبادئ
+1. أنشئ بيئة Python وثبّت اعتماديات المشروع وفق ملفات الاعتماد في المستودع.
+2. انسخ `.env.example` إلى `.env` واملأ القيم السرية محليًا. لا ترفع `.env` إلى Git.
+3. اضبط بيانات المدير وفق آلية المصادقة الموجودة في `app/auth.py`، واستخدم كلمة مرور قوية ومفتاح جلسة عشوائيًا.
+4. شغّل API وفق تعليمات التشغيل الخاصة بالمشروع، ثم افتح ملف `dashboard/index.html` من خلال خادم الويب/الوكيل المهيأ للمسارات، وليس كملف ثابت منفصل عن API.
+5. شغّل الاختبارات وراجع GitHub Actions قبل اعتماد أي نشر.
 
-- Admin-only access
-- GitHub as source of code
-- Secure CI/CD with staging and health gates
-- Dockerized services
-- 24/7 cloud execution independent of phone connectivity
-- Worker health, queueing and controlled failover
-- Centralized logs and audit trail
-- Secrets outside source control
-- Backups with restore verification
-- Kill switch and maintenance mode
-- AI operations restricted by policy
+## إعداد جرد GitHub
 
-## Lifecycle
+- `GITHUB_OWNER=ALNAHMI711`: اسم المستخدم أو المالك الذي تريد عرض مستودعاته.
+- `GITHUB_READ_TOKEN` اختياري. بدونه يعرض GitHub المستودعات العامة فقط. لعرض الخاصة، أنشئ Fine-grained token محدودًا للمالك والمستودعات المطلوبة، وبصلاحية **Metadata: read-only** فقط إذا كانت كافية لاحتياج الجرد.
+- ضع الرمز في أسرار/متغيرات بيئة الخادم فقط، ولا ترسله في المحادثة ولا تضعه في الواجهة أو المستودع.
+- ظهور المستودع في الجرد لا يمنحه إذن تنفيذ. قائمة التنفيذ منفصلة وتحددها سياسة الخادم `CONTROL_ALLOWED_REPOS`/آلية `approved_repositories()`.
+- لا تستخدم رمزًا بصلاحية كتابة لمجرد عرض الجرد. توثيق الصلاحيات: [GitHub fine-grained token permissions](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens).
 
-`DISCOVERED → PENDING_APPROVAL → APPROVED → SYNCING → TESTING → BUILDING → STAGING → HEALTH_CHECK → PRODUCTION → MONITORED`
+## متغيرات التشغيل المهمة
 
-Failure paths include `FAILED`, `ROLLED_BACK`, and `DISABLED`.
+- `CONTROL_QUEUE_BACKEND=sqlite|postgres`
+- `CONTROL_QUEUE_DB` مسار SQLite المحلي.
+- `CONTROL_POSTGRES_DSN` مطلوب عند اختيار PostgreSQL.
+- `CONTROL_KILL_SWITCH_FILE` ملف إيقاف استقبال المهام الجديدة.
+- `GITHUB_WEBHOOK_SECRET` سر عشوائي قوي للتحقق من توقيع webhook.
+- `AI_API_KEY` و`TELEGRAM_BOT_TOKEN` اختياريان، ويجب حفظهما على الخادم فقط.
 
-## Security
+## الأمان وحدود التنفيذ
 
-Production secrets must never be committed. Use environment variables or a dedicated secret manager. Production deployment must remain blocked until authentication, authorization, security checks, tests, health checks, rollback and operational controls are actually verified.
+- المهام تبدأ بحالة `pending_approval`؛ لا تُشغّل أعمال حساسة دون موافقة.
+- Kill Switch يمنع إنشاء مهام جديدة، ولا يعني إيقافًا فوريًا أو آمنًا لكل عامل خارجي.
+- لا تضع أسرارًا في السجلات أو طلبات المتصفح أو Git.
+- لا توصل عاملًا قادرًا على تشغيل أوامر مستودع مباشرة بالإنترنت العام دون عزل وصلاحيات محدودة وحدود موارد ومراجعة للمخرجات.
+- لا تعتبر حالة الصحة أو نجاح CI بديلًا عن اختبار النشر الفعلي، استعادة النسخ الاحتياطية، أو اختبار rollback.
 
-## Execution rule
+## معايير الإطلاق
 
-Inspect → Implement → Test → Fix → Retest → Verify → Commit.
+قبل إعلان Production Ready يجب التحقق فعليًا من: HTTPS، إعدادات المدير والجلسات، RBAC، عزل العامل، موافقة المهام، PostgreSQL persistence، النسخ الاحتياطي والاستعادة، سجلات تدقيق بلا أسرار، حدود الشبكة وSSRF، مراقبة العامل، rollback، واختبارات من بيئة نشر نظيفة.
 
-No mock health/connection/deployment status is considered valid production functionality.
+## قاعدة العمل
+
+Inspect → Implement → Test → Fix → Retest → Verify → Commit. لا يتم الادعاء بنجاح أي اتصال أو نشر غير مختبر.
