@@ -144,9 +144,12 @@ def repository_inventory(user: dict = Depends(current_user)) -> dict:
     try:
         with httpx.Client(timeout=8.0, follow_redirects=False) as client:
             for page in range(1, 11):
+                # /user/repos is required for authenticated private-repository inventory.
+                # Filter by owner so repositories from other owners are never mixed in.
+                endpoint = "https://api.github.com/user/repos" if token else f"https://api.github.com/users/{owner}/repos"
                 response = client.get(
-                    f"https://api.github.com/users/{owner}/repos",
-                    params={"per_page": 100, "page": page, "sort": "updated"},
+                    endpoint,
+                    params={"per_page": 100, "page": page, "sort": "updated", "affiliation": "owner"} if token else {"per_page": 100, "page": page, "sort": "updated"},
                     headers=headers,
                 )
                 if response.status_code == 404:
@@ -159,7 +162,7 @@ def repository_inventory(user: dict = Depends(current_user)) -> dict:
                     raise HTTPException(status_code=502, detail="unexpected GitHub API response")
                 for item in batch:
                     full_name = str(item.get("full_name") or "")
-                    if not full_name:
+                    if not full_name or full_name.split("/", 1)[0].casefold() != owner.casefold():
                         continue
                     repositories.append({
                         "full_name": full_name,
