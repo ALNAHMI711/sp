@@ -195,3 +195,44 @@ def test_approved_repositories_endpoint_requires_auth_and_lists_allowlist(tmp_pa
             "ALNAHMI711/sp",
         ]
     }
+
+
+def test_repository_inventory_requires_auth_and_reports_public_visibility(tmp_path: Path, monkeypatch) -> None:
+    client = configured_client(tmp_path, monkeypatch)
+    denied = client.get("/repository-inventory")
+    assert denied.status_code == 401
+
+    class FakeResponse:
+        status_code = 200
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return [{
+                "full_name": "ALNAHMI711/sp",
+                "html_url": "https://github.com/ALNAHMI711/sp",
+                "private": False,
+                "default_branch": "main",
+                "updated_at": "2026-10-11T00:00:00Z",
+            }]
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(api.httpx, "Client", FakeClient)
+    monkeypatch.delenv("GITHUB_READ_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_OWNER", "ALNAHMI711")
+    monkeypatch.setattr(api, "CONTROL_ALLOWED_REPOS", frozenset({"ALNAHMI711/sp"}))
+
+    response = client.get("/repository-inventory", headers=login_headers(client))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["visibility_scope"] == "public_only"
+    assert data["count"] == 1
+    assert data["repositories"][0]["approved_for_jobs"] is True
